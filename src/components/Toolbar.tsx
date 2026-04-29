@@ -1,4 +1,5 @@
-import type { ArrowStyle, DrawingStyle, LineStyle, StrokeColor, Tool } from '../types/drawing'
+import { ColorPicker } from './ColorPicker'
+import type { ArrowHead, DrawingStyle, LineCap, LineJoin, LineStyle, Tool } from '../types/drawing'
 
 type ToolbarProps = {
   activeTool: Tool
@@ -14,28 +15,36 @@ const tools: Array<{ value: Tool; label: string }> = [
   { value: 'select', label: '选择' },
   { value: 'line', label: '直线' },
   { value: 'arc', label: '圆弧' },
+  { value: 'rectangle', label: '矩形' },
+  { value: 'circle', label: '圆' },
+  { value: 'ellipse', label: '椭圆' },
+  { value: 'polyline', label: '多段线' },
 ]
 
-const arrows: Array<{ value: ArrowStyle; label: string }> = [
-  { value: 'none', label: '无箭头' },
-  { value: 'end', label: '末端箭头' },
-  { value: 'start', label: '起点箭头' },
-  { value: 'both', label: '双向箭头' },
+const arrows: Array<{ value: ArrowHead; label: string }> = [
+  { value: 'none', label: '无' },
+  { value: 'Latex', label: 'Latex' },
+  { value: 'Stealth', label: 'Stealth' },
+  { value: 'Triangle', label: 'Triangle' },
 ]
 
 const lineStyles: Array<{ value: LineStyle; label: string }> = [
   { value: 'solid', label: '实线' },
   { value: 'dashed', label: '虚线' },
   { value: 'dotted', label: '点线' },
+  { value: 'dash dot', label: '点划线' },
 ]
 
-const colors: Array<{ value: StrokeColor; label: string }> = [
-  { value: 'black', label: '黑' },
-  { value: 'red', label: '红' },
-  { value: 'blue', label: '蓝' },
-  { value: 'green', label: '绿' },
-  { value: 'orange', label: '橙' },
-  { value: 'purple', label: '紫' },
+const lineCaps: Array<{ value: LineCap; label: string }> = [
+  { value: 'butt', label: 'butt' },
+  { value: 'round', label: 'round' },
+  { value: 'rect', label: 'rect' },
+]
+
+const lineJoins: Array<{ value: LineJoin; label: string }> = [
+  { value: 'miter', label: 'miter' },
+  { value: 'round', label: 'round' },
+  { value: 'bevel', label: 'bevel' },
 ]
 
 export function Toolbar({
@@ -68,10 +77,24 @@ export function Toolbar({
       <section>
         <h2>线条样式</h2>
         <label>
-          箭头
+          起点箭头
           <select
-            value={style.arrow}
-            onChange={(event) => onStyleChange({ ...style, arrow: event.target.value as ArrowStyle })}
+            value={style.startArrow}
+            onChange={(event) => onStyleChange({ ...style, startArrow: event.target.value as ArrowHead })}
+          >
+            {arrows.map((arrow) => (
+              <option key={arrow.value} value={arrow.value}>
+                {arrow.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          终点箭头
+          <select
+            value={style.endArrow}
+            onChange={(event) => onStyleChange({ ...style, endArrow: event.target.value as ArrowHead })}
           >
             {arrows.map((arrow) => (
               <option key={arrow.value} value={arrow.value}>
@@ -97,26 +120,58 @@ export function Toolbar({
 
         <label>
           颜色
+          <ColorPicker color={style.drawColor} onChange={(drawColor) => onStyleChange({ ...style, drawColor })} />
+        </label>
+
+        <label>
+          线宽：{style.lineWidth}pt
+          <input
+            max="6"
+            min="0.2"
+            step="0.1"
+            type="range"
+            value={style.lineWidth}
+            onChange={(event) => onStyleChange({ ...style, lineWidth: Number(event.target.value) })}
+          />
+        </label>
+
+        <label>
+          line cap
           <select
-            value={style.strokeColor}
-            onChange={(event) => onStyleChange({ ...style, strokeColor: event.target.value as StrokeColor })}
+            value={style.lineCap}
+            onChange={(event) => onStyleChange({ ...style, lineCap: event.target.value as LineCap })}
           >
-            {colors.map((color) => (
-              <option key={color.value} value={color.value}>
-                {color.label}
+            {lineCaps.map((lineCap) => (
+              <option key={lineCap.value} value={lineCap.value}>
+                {lineCap.label}
               </option>
             ))}
           </select>
         </label>
 
         <label>
-          线宽
+          line join
+          <select
+            value={style.lineJoin}
+            onChange={(event) => onStyleChange({ ...style, lineJoin: event.target.value as LineJoin })}
+          >
+            {lineJoins.map((lineJoin) => (
+              <option key={lineJoin.value} value={lineJoin.value}>
+                {lineJoin.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          opacity：{style.opacity}
           <input
-            max="8"
-            min="1"
+            max="1"
+            min="0.1"
+            step="0.05"
             type="range"
-            value={style.strokeWidth}
-            onChange={(event) => onStyleChange({ ...style, strokeWidth: Number(event.target.value) })}
+            value={style.opacity}
+            onChange={(event) => onStyleChange({ ...style, opacity: Number(event.target.value) })}
           />
         </label>
       </section>

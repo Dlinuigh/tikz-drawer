@@ -1,14 +1,43 @@
 import type { Point } from '../types/drawing'
 
-export const canvasToTikz = (point: Point): Point => ({
-  x: (point.x - 400) / 50,
-  y: (300 - point.y) / 50,
+export type CoordinateSystem = {
+  width: number
+  height: number
+  origin: Point
+  pixelsPerUnit: number
+  gridStep: number
+  snapToGrid: boolean
+}
+
+export const defaultCoordinateSystem: CoordinateSystem = {
+  width: 800,
+  height: 600,
+  origin: { x: 400, y: 300 },
+  pixelsPerUnit: 50,
+  gridStep: 1,
+  snapToGrid: true,
+}
+
+export const svgToTikz = (point: Point, coordinateSystem = defaultCoordinateSystem): Point => ({
+  x: (point.x - coordinateSystem.origin.x) / coordinateSystem.pixelsPerUnit,
+  y: (coordinateSystem.origin.y - point.y) / coordinateSystem.pixelsPerUnit,
 })
 
-export const tikzToCanvas = (point: Point): Point => ({
-  x: point.x * 50 + 400,
-  y: 300 - point.y * 50,
+export const tikzToSvg = (point: Point, coordinateSystem = defaultCoordinateSystem): Point => ({
+  x: point.x * coordinateSystem.pixelsPerUnit + coordinateSystem.origin.x,
+  y: coordinateSystem.origin.y - point.y * coordinateSystem.pixelsPerUnit,
 })
+
+export const snapTikzPoint = (point: Point, coordinateSystem = defaultCoordinateSystem): Point => {
+  if (!coordinateSystem.snapToGrid) {
+    return point
+  }
+
+  return {
+    x: Math.round(point.x / coordinateSystem.gridStep) * coordinateSystem.gridStep,
+    y: Math.round(point.y / coordinateSystem.gridStep) * coordinateSystem.gridStep,
+  }
+}
 
 export const formatNumber = (value: number): string => {
   const rounded = Math.round(value * 1000) / 1000

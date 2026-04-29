@@ -31,8 +31,8 @@
 
 .workspace {
   display: grid;
-  grid-template-columns: 230px minmax(640px, 1fr) 230px;
-  gap: 18px;
+  grid-template-columns: 210px minmax(640px, 1fr) 210px;
+  gap: 14px;
   align-items: start;
 }
 
@@ -40,8 +40,8 @@
 .properties-panel {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 16px;
+  gap: 12px;
+  padding: 12px;
 }
 
 .toolbar section,
@@ -53,13 +53,13 @@
 .properties-panel h2,
 .preview-panel h2,
 .canvas-header h2 {
-  font-size: 18px;
-  margin: 0 0 10px;
+  font-size: 16px;
+  margin: 0 0 8px;
 }
 
 .button-grid {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 button,
@@ -79,7 +79,8 @@ select {
 
 button {
   cursor: pointer;
-  padding: 9px 12px;
+  font-size: 14px;
+  padding: 6px 9px;
 }
 
 button:disabled {
@@ -99,16 +100,44 @@ button.danger {
 
 label {
   display: grid;
-  gap: 6px;
-  margin-bottom: 12px;
+  gap: 5px;
+  margin-bottom: 9px;
   color: var(--text-h);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 select,
 input {
   width: 100%;
-  padding: 8px 10px;
+  padding: 6px 8px;
+}
+
+.color-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.color-picker .react-colorful {
+  width: 100%;
+  height: 110px;
+}
+
+.preset-colors {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(6, 1fr);
+}
+
+.color-swatch {
+  border-radius: 999px;
+  height: 20px;
+  min-width: 0;
+  padding: 0;
+}
+
+.color-swatch.active {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .hint,
@@ -137,6 +166,15 @@ input {
   display: block;
   height: auto;
   width: 100%;
+}
+
+.canvas-background {
+  fill: #fff;
+}
+
+.grid-line {
+  stroke: #e5e7eb;
+  stroke-width: 1;
 }
 
 .axis {

@@ -1,4 +1,5 @@
-import type { ArrowStyle, DrawingElement, DrawingStyle, LineStyle, StrokeColor } from '../types/drawing'
+import { ColorPicker } from './ColorPicker'
+import type { ArrowHead, DrawingElement, DrawingStyle, LineCap, LineJoin, LineStyle } from '../types/drawing'
 
 type PropertiesPanelProps = {
   selectedElement: DrawingElement | null
@@ -14,6 +15,15 @@ const updateStyle = (element: DrawingElement, style: Partial<DrawingStyle>): Dra
   },
 })
 
+const elementTypeLabel: Record<DrawingElement['type'], string> = {
+  line: '直线',
+  arc: '圆弧',
+  rectangle: '矩形',
+  circle: '圆',
+  ellipse: '椭圆',
+  polyline: '多段线',
+}
+
 export function PropertiesPanel({ selectedElement, onUpdate, onDelete }: PropertiesPanelProps) {
   if (!selectedElement) {
     return (
@@ -27,18 +37,31 @@ export function PropertiesPanel({ selectedElement, onUpdate, onDelete }: Propert
   return (
     <aside className="properties-panel">
       <h2>属性</h2>
-      <p className="element-id">{selectedElement.type === 'line' ? '直线' : '圆弧'} · {selectedElement.id}</p>
+      <p className="element-id">{elementTypeLabel[selectedElement.type]} · {selectedElement.id}</p>
 
       <label>
-        箭头
+        起点箭头
         <select
-          value={selectedElement.style.arrow}
-          onChange={(event) => onUpdate(updateStyle(selectedElement, { arrow: event.target.value as ArrowStyle }))}
+          value={selectedElement.style.startArrow}
+          onChange={(event) => onUpdate(updateStyle(selectedElement, { startArrow: event.target.value as ArrowHead }))}
         >
-          <option value="none">无箭头</option>
-          <option value="end">末端箭头</option>
-          <option value="start">起点箭头</option>
-          <option value="both">双向箭头</option>
+          <option value="none">无</option>
+          <option value="Latex">Latex</option>
+          <option value="Stealth">Stealth</option>
+          <option value="Triangle">Triangle</option>
+        </select>
+      </label>
+
+      <label>
+        终点箭头
+        <select
+          value={selectedElement.style.endArrow}
+          onChange={(event) => onUpdate(updateStyle(selectedElement, { endArrow: event.target.value as ArrowHead }))}
+        >
+          <option value="none">无</option>
+          <option value="Latex">Latex</option>
+          <option value="Stealth">Stealth</option>
+          <option value="Triangle">Triangle</option>
         </select>
       </label>
 
@@ -51,34 +74,63 @@ export function PropertiesPanel({ selectedElement, onUpdate, onDelete }: Propert
           <option value="solid">实线</option>
           <option value="dashed">虚线</option>
           <option value="dotted">点线</option>
+          <option value="dash dot">点划线</option>
         </select>
       </label>
 
       <label>
         颜色
+        <ColorPicker
+          color={selectedElement.style.drawColor}
+          onChange={(drawColor) => onUpdate(updateStyle(selectedElement, { drawColor }))}
+        />
+      </label>
+
+      <label>
+        线宽：{selectedElement.style.lineWidth}pt
+        <input
+          max="6"
+          min="0.2"
+          step="0.1"
+          type="range"
+          value={selectedElement.style.lineWidth}
+          onChange={(event) => onUpdate(updateStyle(selectedElement, { lineWidth: Number(event.target.value) }))}
+        />
+      </label>
+
+      <label>
+        line cap
         <select
-          value={selectedElement.style.strokeColor}
-          onChange={(event) =>
-            onUpdate(updateStyle(selectedElement, { strokeColor: event.target.value as StrokeColor }))
-          }
+          value={selectedElement.style.lineCap}
+          onChange={(event) => onUpdate(updateStyle(selectedElement, { lineCap: event.target.value as LineCap }))}
         >
-          <option value="black">黑</option>
-          <option value="red">红</option>
-          <option value="blue">蓝</option>
-          <option value="green">绿</option>
-          <option value="orange">橙</option>
-          <option value="purple">紫</option>
+          <option value="butt">butt</option>
+          <option value="round">round</option>
+          <option value="rect">rect</option>
         </select>
       </label>
 
       <label>
-        线宽
+        line join
+        <select
+          value={selectedElement.style.lineJoin}
+          onChange={(event) => onUpdate(updateStyle(selectedElement, { lineJoin: event.target.value as LineJoin }))}
+        >
+          <option value="miter">miter</option>
+          <option value="round">round</option>
+          <option value="bevel">bevel</option>
+        </select>
+      </label>
+
+      <label>
+        opacity：{selectedElement.style.opacity}
         <input
-          max="8"
-          min="1"
+          max="1"
+          min="0.1"
+          step="0.05"
           type="range"
-          value={selectedElement.style.strokeWidth}
-          onChange={(event) => onUpdate(updateStyle(selectedElement, { strokeWidth: Number(event.target.value) }))}
+          value={selectedElement.style.opacity}
+          onChange={(event) => onUpdate(updateStyle(selectedElement, { opacity: Number(event.target.value) }))}
         />
       </label>
 
