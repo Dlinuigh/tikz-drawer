@@ -6,7 +6,7 @@ All notable changes to TikZ Drawer will be documented in this file.
 
 ### Added
 
-- **GitHub Actions**：`.github/workflows/ci.yml` 在推送至 `main`/`master`、任意 PR 或手动 `workflow_dispatch` 时运行；Linux 任务执行 `npm ci`、`build`、`lint` 与 `cargo build --locked`，macOS 任务执行完整 `tauri build`。
+- **GitHub Actions**：`.github/workflows/ci.yml` 在任意分支 **push**、**pull_request** 或手动 **workflow_dispatch** 时运行；Linux 任务执行 `npm ci`、`build`、`lint` 与 `cargo build --locked`，macOS 任务执行完整 `tauri build`。
 - **README**：顶部增加指向上述工作流的 CI 状态徽章与简要说明。
 
 ### Changed

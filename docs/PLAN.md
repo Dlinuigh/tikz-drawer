@@ -115,7 +115,7 @@ flowchart LR
 ## 2026-05-06 会话增量（GitHub Actions CI）
 
 - **工作流**：仓库根目录 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)，工作流名 **`CI`**。
-- **触发**：向 **`main` / `master`** 的 `push`、任意分支的 **`pull_request`**、以及 **`workflow_dispatch`**（手动）。
+- **触发**：任意分支 **`push`**、**`pull_request`**、**`workflow_dispatch`**（手动）。
 - **Linux 任务**：安装 WebKitGTK / GTK 等 Tauri 依赖后执行 `npm ci`、`npm run build`、`npm run lint`、`cargo build --locked`（`src-tauri/Cargo.toml`）。
 - **macOS 任务**：`npm ci` 后 `npm run tauri build`，与Release 构建路径一致（云端不依赖本机 LaTeX；CI 仅验证壳工程可编译打包）。
 - **README**：标题下增加 GitHub Actions 徽章（默认分支上该工作流最新一次结论）；说明见徽章链接触发的 Actions 页面。
