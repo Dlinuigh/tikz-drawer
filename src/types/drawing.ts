@@ -3,7 +3,17 @@ export type Point = {
   y: number
 }
 
-export type Tool = 'select' | 'line' | 'arc' | 'rectangle' | 'circle' | 'ellipse' | 'polyline'
+export type LineSubtool = 'twoPoints' | 'pointSlope'
+
+export type Tool =
+  | 'select'
+  | 'line'
+  | 'arc'
+  | 'rectangle'
+  | 'circle'
+  | 'ellipse'
+  | 'polyline'
+  | 'axes'
 
 export type ArrowHead = 'none' | 'Latex' | 'Stealth' | 'Triangle'
 
@@ -72,6 +82,53 @@ export type PolylineElement = {
   style: DrawingStyle
 }
 
+/** TikZ-style `\\node[...]` placement keywords (subset). */
+export type AxisNameTikzPlacement =
+  | 'above'
+  | 'below'
+  | 'left'
+  | 'right'
+  | 'above left'
+  | 'above right'
+  | 'below left'
+  | 'below right'
+
+/** Manual tick: `value` in axis coordinates; optional `label` as LaTeX/math for TikZ (plain text ok for canvas). */
+export type AxisTickMark = {
+  value: number
+  label?: string
+}
+
+export type AxesElement = {
+  id: string
+  type: 'axes'
+  origin: Point
+  xMin: number
+  xMax: number
+  yMin: number
+  yMax: number
+  style: DrawingStyle
+  tickStepX: number
+  tickStepY: number
+  /** Merged with step-based ticks; optional `label` overrides number shown at this position */
+  manualTicksX: AxisTickMark[]
+  manualTicksY: AxisTickMark[]
+  showTicks: boolean
+  showTickLabels: boolean
+  labelX: string
+  labelY: string
+  /** TikZ node placement for the x-axis name */
+  labelXPlacement: AxisNameTikzPlacement
+  /** TikZ node placement for the y-axis name */
+  labelYPlacement: AxisNameTikzPlacement
+  /** Extra offset (TikZ units) for x-axis name after default tip offset */
+  labelXDx: number
+  labelXDy: number
+  /** Extra offset (TikZ units) for y-axis name after default tip offset */
+  labelYDx: number
+  labelYDy: number
+}
+
 export type DrawingElement =
   | LineElement
   | ArcElement
@@ -79,6 +136,7 @@ export type DrawingElement =
   | CircleElement
   | EllipseElement
   | PolylineElement
+  | AxesElement
 
 export type DraftElement = {
   type: 'line' | 'arc' | 'rectangle' | 'circle' | 'ellipse' | 'polyline'
@@ -101,3 +159,32 @@ export const defaultStyle: DrawingStyle = {
 }
 
 export const presetColors = ['#111827', '#dc2626', '#2563eb', '#16a34a', '#ea580c', '#7c3aed']
+
+export const defaultAxesOptions: Pick<
+  AxesElement,
+  | 'tickStepX'
+  | 'tickStepY'
+  | 'showTicks'
+  | 'showTickLabels'
+  | 'labelX'
+  | 'labelY'
+  | 'labelXPlacement'
+  | 'labelYPlacement'
+  | 'labelXDx'
+  | 'labelXDy'
+  | 'labelYDx'
+  | 'labelYDy'
+> = {
+  tickStepX: 1,
+  tickStepY: 1,
+  showTicks: true,
+  showTickLabels: true,
+  labelX: '$x$',
+  labelY: '$y$',
+  labelXPlacement: 'right',
+  labelYPlacement: 'above',
+  labelXDx: 0,
+  labelXDy: 0,
+  labelYDx: 0,
+  labelYDy: 0,
+}

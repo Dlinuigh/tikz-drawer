@@ -1,17 +1,19 @@
 import { ColorPicker } from './ColorPicker'
-import type { ArrowHead, DrawingStyle, LineCap, LineJoin, LineStyle, Tool } from '../types/drawing'
+import type { ArrowHead, DrawingStyle, LineCap, LineJoin, LineStyle, LineSubtool, Tool } from '../types/drawing'
 
 type ToolbarProps = {
   activeTool: Tool
+  lineSubtool: LineSubtool
   style: DrawingStyle
   arcAngle: number
   onToolChange: (tool: Tool) => void
+  onLineSubtoolChange: (sub: LineSubtool) => void
   onStyleChange: (style: DrawingStyle) => void
   onArcAngleChange: (angle: number) => void
   onClear: () => void
 }
 
-const tools: Array<{ value: Tool; label: string }> = [
+const primaryTools: Array<{ value: Tool; label: string }> = [
   { value: 'select', label: '选择' },
   { value: 'line', label: '直线' },
   { value: 'arc', label: '圆弧' },
@@ -19,6 +21,12 @@ const tools: Array<{ value: Tool; label: string }> = [
   { value: 'circle', label: '圆' },
   { value: 'ellipse', label: '椭圆' },
   { value: 'polyline', label: '多段线' },
+  { value: 'axes', label: '坐标轴' },
+]
+
+const lineSubtools: Array<{ value: LineSubtool; label: string }> = [
+  { value: 'twoPoints', label: '两点' },
+  { value: 'pointSlope', label: '点与斜率' },
 ]
 
 const arrows: Array<{ value: ArrowHead; label: string }> = [
@@ -49,9 +57,11 @@ const lineJoins: Array<{ value: LineJoin; label: string }> = [
 
 export function Toolbar({
   activeTool,
+  lineSubtool,
   style,
   arcAngle,
   onToolChange,
+  onLineSubtoolChange,
   onStyleChange,
   onArcAngleChange,
   onClear,
@@ -60,17 +70,33 @@ export function Toolbar({
     <aside className="toolbar">
       <section>
         <h2>绘图工具</h2>
-        <div className="button-grid">
-          {tools.map((tool) => (
-            <button
-              key={tool.value}
-              className={activeTool === tool.value ? 'active' : ''}
-              type="button"
-              onClick={() => onToolChange(tool.value)}
-            >
-              {tool.label}
-            </button>
-          ))}
+        <div className="toolbar-tool-columns">
+          <div className="toolbar-primary-col">
+            {primaryTools.map((tool) => (
+              <button
+                key={tool.value}
+                className={activeTool === tool.value ? 'active' : ''}
+                type="button"
+                onClick={() => onToolChange(tool.value)}
+              >
+                {tool.label}
+              </button>
+            ))}
+          </div>
+          {activeTool === 'line' && (
+            <div className="toolbar-secondary-col" aria-label="直线方式">
+              {lineSubtools.map((sub) => (
+                <button
+                  key={sub.value}
+                  className={lineSubtool === sub.value ? 'active' : ''}
+                  type="button"
+                  onClick={() => onLineSubtoolChange(sub.value)}
+                >
+                  {sub.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 

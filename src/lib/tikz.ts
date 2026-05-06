@@ -1,4 +1,12 @@
-import type { ArcElement, CircleElement, DrawingElement, DrawingStyle, EllipseElement } from '../types/drawing'
+import type { ArcElement, AxesElement, CircleElement, DrawingElement, DrawingStyle, EllipseElement } from '../types/drawing'
+import {
+  axesNameLabelOffset,
+  axesTickHalfLength,
+  formatTickLabel,
+  getAxesSegments,
+  mergeAxisTickMarks,
+  tickValuesInRange,
+} from './axes'
 import { distance, formatNumber, getArcGeometry, pointToTikz } from './geometry'
 
 const arrowHeadOptions: Record<DrawingStyle['startArrow'], string | null> = {
@@ -33,6 +41,19 @@ const arrowToTikz = (style: DrawingStyle): string | null => {
 const styleToTikzOptions = (style: DrawingStyle): string => {
   const options = [
     arrowToTikz(style),
+    `draw=${colorName(style.drawColor)}`,
+    lineStyleOptions[style.lineStyle],
+    `line width=${formatNumber(style.lineWidth)}pt`,
+    `line cap=${style.lineCap}`,
+    `line join=${style.lineJoin}`,
+    style.opacity < 1 ? `opacity=${formatNumber(style.opacity)}` : null,
+  ].filter(Boolean)
+
+  return `[${options.join(', ')}]`
+}
+
+const strokeStyleToTikzOptions = (style: DrawingStyle): string => {
+  const options = [
     `draw=${colorName(style.drawColor)}`,
     lineStyleOptions[style.lineStyle],
     `line width=${formatNumber(style.lineWidth)}pt`,
@@ -92,6 +113,88 @@ const polylineToTikz = (element: DrawingElement): string => {
   return `\\draw${styleToTikzOptions(element.style)} ${points};`
 }
 
+const tickMarkBodyTikz = (tick: { value: number; label?: string }): string => {
+  const custom = tick.label?.trim()
+  if (custom) {
+    return custom
+  }
+  return `$${formatTickLabel(tick.value)}$`
+}
+
+const axesToTikz = (element: AxesElement): string => {
+  const { x, y } = getAxesSegments(element.origin, element.xMin, element.xMax, element.yMin, element.yMax)
+  const ox = element.origin.x
+  const oy = element.origin.y
+  const δ = axesTickHalfLength
+  const axisStyle: DrawingStyle = { ...element.style, startArrow: 'none' }
+  const axisOpts = styleToTikzOptions(axisStyle)
+  const tickOpts = strokeStyleToTikzOptions(element.style)
+  const parts: string[] = []
+
+  const xSpan = Math.abs(x.end.x - x.start.x)
+  const ySpan = Math.abs(y.end.y - y.start.y)
+
+  if (xSpan > 1e-9) {
+    parts.push(`\\draw${axisOpts} ${pointToTikz(x.start)} -- ${pointToTikz(x.end)};`)
+  }
+  if (ySpan > 1e-9) {
+    parts.push(`\\draw${axisOpts} ${pointToTikz(y.start)} -- ${pointToTikz(y.end)};`)
+  }
+
+  if (element.showTicks && xSpan > 1e-9) {
+    const xMin = Math.min(x.start.x, x.end.x)
+    const xMax = Math.max(x.start.x, x.end.x)
+    const steppedX = element.tickStepX > 0 ? tickValuesInRange(xMin, xMax, element.tickStepX) : []
+    const ticksX = mergeAxisTickMarks(steppedX, element.manualTicksX, xMin, xMax)
+    for (const tick of ticksX) {
+      const tx = tick.value
+      parts.push(
+        `\\draw${tickOpts} (${formatNumber(tx)},${formatNumber(oy + δ)}) -- (${formatNumber(tx)},${formatNumber(oy - δ)});`,
+      )
+      if (element.showTickLabels) {
+        parts.push(
+          `\\node[font=\\small,below] at (${formatNumber(tx)},${formatNumber(oy - δ)}) {${tickMarkBodyTikz(tick)}};`,
+        )
+      }
+    }
+  }
+
+  if (element.showTicks && ySpan > 1e-9) {
+    const yMin = Math.min(y.start.y, y.end.y)
+    const yMax = Math.max(y.start.y, y.end.y)
+    const steppedY = element.tickStepY > 0 ? tickValuesInRange(yMin, yMax, element.tickStepY) : []
+    const ticksY = mergeAxisTickMarks(steppedY, element.manualTicksY, yMin, yMax)
+    for (const tick of ticksY) {
+      const ty = tick.value
+      parts.push(
+        `\\draw${tickOpts} (${formatNumber(ox - δ)},${formatNumber(ty)}) -- (${formatNumber(ox + δ)},${formatNumber(ty)});`,
+      )
+      if (element.showTickLabels) {
+        parts.push(
+          `\\node[font=\\small,left] at (${formatNumber(ox - δ)},${formatNumber(ty)}) {${tickMarkBodyTikz(tick)}};`,
+        )
+      }
+    }
+  }
+
+  if (element.labelX.trim() && xSpan > 1e-9) {
+    const px = x.end.x + axesNameLabelOffset + element.labelXDx
+    const py = oy + element.labelXDy
+    const posX = element.labelXPlacement
+    parts.push(
+      `\\node[font=\\small,${posX}] at (${formatNumber(px)},${formatNumber(py)}) {${element.labelX}};`,
+    )
+  }
+  if (element.labelY.trim() && ySpan > 1e-9) {
+    const px = ox + element.labelYDx
+    const py = y.end.y + axesNameLabelOffset + element.labelYDy
+    const posY = element.labelYPlacement
+    parts.push(`\\node[font=\\small,${posY}] at (${formatNumber(px)},${formatNumber(py)}) {${element.labelY}};`)
+  }
+
+  return parts.join('\n')
+}
+
 export const elementToTikz = (element: DrawingElement): string => {
   if (element.type === 'line') {
     return lineToTikz(element)
@@ -107,6 +210,9 @@ export const elementToTikz = (element: DrawingElement): string => {
   }
   if (element.type === 'polyline') {
     return polylineToTikz(element)
+  }
+  if (element.type === 'axes') {
+    return axesToTikz(element)
   }
 
   return arcToTikz(element)

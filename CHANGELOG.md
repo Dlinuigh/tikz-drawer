@@ -6,6 +6,19 @@ All notable changes to TikZ Drawer will be documented in this file.
 
 ### Added
 
+- After compile: **embedded PDF preview** (iframe + `convertFileSrc`), **open PDF in the default system viewer**, **copy TikZ** button, **export PDF / PNG** via save dialog (PNG uses local `pdftocairo`, ImageMagick, or Ghostscript when available).
+- LaTeX output goes to a **fixed temp workspace** cleared on each compile (`<temp>/tikz-drawer/workspace`).
+- Runtime deps: `@tauri-apps/plugin-dialog`, `@tauri-apps/plugin-opener`; Rust `tauri-plugin-dialog`, `tauri-plugin-opener`.
+- Plan note: `docs/export_pdf_preview.plan.md`.
+- Coordinate axes properties use **tabs** (range & origin · ticks · axis names).
+- Coordinate axes manual ticks (`manualTicksX`/`manualTicksY`) support **optional tick labels** (TikZ text; canvas shows verbatim).
+- Axis name **TikZ `\\node` placement** (`above`, `below`, `right`, `above left`, …) plus **Δx/Δy** offsets from the positive semi-axis tip; SVG mirrors placement approximately.
+- Number inputs accept **rational `a/b`** (e.g. `1/3`) in the axes bounds modal, line–slope modal, and axes property fields; tick labels prefer `n/d` when the value matches a low-denominator fraction.
+- Utility `src/lib/parseNumber.ts` for flexible numeric parsing.
+- Inkscape-style toolbar: primary tools in the left column; choosing Line shows sub-buttons (two points vs. point + slope) in the right column.
+- Line drawing via point and slope: click an anchor, then enter slope and two x-coordinates in a dialog (vertical lines still use two-point mode).
+- Coordinate axes: click the origin, then set x/y min and max in a dialog; axes elements store explicit bounds instead of a second corner point.
+- Plan note: `docs/session_axes_bounds_line_subtools.plan.md`.
 - Added a Markdown archive of the Cursor Canvas roadmap at `docs/CANVAS_ROADMAP.md`.
 - Added the feature expansion roadmap at `docs/ROADMAP.md`.
 - Added rectangle drawing from two opposite corners.
@@ -16,6 +29,8 @@ All notable changes to TikZ Drawer will be documented in this file.
 
 ### Changed
 
+- Tauri capabilities: configure `opener:allow-open-path` with scope `{ "path": "$TEMP/tikz-drawer/**" }` so LaTeX PDFs under the temp workspace can be opened (string-only permission is not enough).
+- Updated `docs/PLAN.md` for compile workspace, preview/export commands, and prior interaction notes (line modes, axes, fraction input).
 - Updated README documentation links to point to the docs roadmap and Canvas roadmap archive.
 
 ## 0.0.0 - 2026-04-29

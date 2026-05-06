@@ -31,7 +31,7 @@
 
 .workspace {
   display: grid;
-  grid-template-columns: 210px minmax(640px, 1fr) 210px;
+  grid-template-columns: 280px minmax(640px, 1fr) 210px;
   gap: 14px;
   align-items: start;
 }
@@ -60,6 +60,141 @@
 .button-grid {
   display: grid;
   gap: 6px;
+}
+
+.toolbar-tool-columns {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.toolbar-primary-col,
+.toolbar-secondary-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.toolbar-primary-col {
+  flex: 0 0 auto;
+}
+
+.toolbar-primary-col > button {
+  min-width: 5.5rem;
+}
+
+.toolbar-secondary-col {
+  border-left: 1px solid var(--border);
+  padding-left: 10px;
+  flex: 1 1 auto;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.45);
+  box-sizing: border-box;
+}
+
+.modal-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  max-width: 380px;
+  width: 100%;
+  padding: 18px 20px;
+  box-sizing: border-box;
+}
+
+.modal-panel h3 {
+  font-size: 16px;
+  margin: 0 0 8px;
+}
+
+.modal-panel .hint {
+  margin-bottom: 12px;
+}
+
+.modal-error {
+  color: #b91c1c;
+  font-size: 13px;
+  margin: 0 0 4px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+button.primary {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.axes-prop-tabs {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.tab-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tab-chip {
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
+.tab-chip.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.field-group-title {
+  color: var(--text-h);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+
+.manual-ticks-block {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+.manual-tick-row {
+  align-items: end;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 1fr 1fr auto;
+}
+
+button.compact {
+  padding: 4px 8px;
+  font-size: 13px;
 }
 
 button,
@@ -156,9 +291,46 @@ input {
 .preview-header {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
   justify-content: space-between;
   padding: 14px 16px;
   text-align: left;
+}
+
+.preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.preview-inline-hint {
+  color: var(--accent);
+  font-size: 13px;
+  margin: 0 16px 8px;
+}
+
+.pdf-preview-wrap {
+  margin: 12px 16px 0;
+}
+
+.pdf-preview-wrap .hint {
+  margin-bottom: 8px;
+}
+
+.pdf-preview-frame {
+  background: #525659;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-height: 420px;
+  width: 100%;
+}
+
+.pdf-path-line {
+  font-size: 12px;
+  margin: 6px 16px 0;
+  word-break: break-all;
 }
 
 .drawing-canvas {
@@ -180,6 +352,19 @@ input {
 .axis {
   stroke: #d1d5db;
   stroke-width: 1.5;
+  opacity: 0.65;
+}
+
+.axes-tick-label,
+.axes-name-label {
+  cursor: pointer;
+  pointer-events: painted;
+  user-select: none;
+}
+
+.axes-tick-label.selected,
+.axes-name-label.selected {
+  filter: drop-shadow(0 0 4px rgba(37, 99, 235, 0.75));
 }
 
 .shape {
@@ -199,8 +384,7 @@ input {
   padding-bottom: 16px;
 }
 
-.code-output,
-.compile-log pre {
+.code-output {
   background: var(--code-bg);
   border-radius: 12px;
   margin: 0 16px;
@@ -210,15 +394,32 @@ input {
   white-space: pre-wrap;
 }
 
+.compile-log-scroll {
+  background: var(--code-bg);
+  border-radius: 12px;
+  margin: 8px 16px 0;
+  max-height: min(42vh, 360px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.compile-log-scroll pre {
+  margin: 0;
+  padding: 14px;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .compile-log {
   margin-top: 14px;
-  padding: 0 16px;
+  padding: 0;
   text-align: left;
 }
 
 .compile-log strong {
   display: block;
-  margin-bottom: 8px;
+  margin: 0 16px 8px;
 }
 
 .compile-log.success strong {
@@ -227,6 +428,10 @@ input {
 
 .compile-log.error strong {
   color: #b91c1c;
+}
+
+.preview-panel .preview-header h2 {
+  margin: 0;
 }
 
 @media (max-width: 1180px) {

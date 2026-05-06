@@ -32,14 +32,15 @@ flowchart LR
 
 ## 图形交互规则
 
-- 直线：支持两点作图，第一次点击确定起点，第二次点击确定终点。
+- 直线：默认两点作图；可选「点与斜率」——先点锚点再在对话框输入斜率与两端 x。竖直线建议仍用两点。
+- 坐标轴：点击原点后，在对话框中设置 x/y 上下限（支持负半轴）；属性中用选项卡配置原点、上下限、步长、手动刻度（位置与 TikZ 标记名）、轴线显示与轴名称位置（TikZ node 关键字 + 偏移）；数值支持 `1/3`。
 - 圆弧：使用起始点、终点、给定角度生成。界面上先选起点、终点，再通过角度输入决定圆弧。
 - 样式：通过按钮或选择器设置 `arrow`、`lineStyle`、`strokeColor` 和 `strokeWidth`，并立即应用到新图形或当前选中图形。
 
 ## LaTeX 编译方案
 
-- `src-tauri/src/lib.rs` 暴露 `compile_tikz` Tauri command。
-- 编译流程：接收 TikZ 代码，写入临时 `.tex` 文件，调用本机 `pdflatex -interaction=nonstopmode -halt-on-error`，返回编译状态、日志和输出 PDF 路径。
+- `src-tauri/src/lib.rs` 暴露 `compile_tikz`、`copy_path`、`rasterize_pdf_first_page` 等命令。
+- 编译流程：接收 TikZ 代码，写入固定临时工作区（每次编译前清空），调用本机 `pdflatex -interaction=nonstopmode -halt-on-error`，返回编译状态、日志与 PDF 路径；前端可内嵌预览、系统打开、导出 PDF/PNG。
 - 默认加载常用 TikZ 库：`arrows.meta`、`calc`、`decorations.pathreplacing`、`positioning`。
 
 ## 完成状态

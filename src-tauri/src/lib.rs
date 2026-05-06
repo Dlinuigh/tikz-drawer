@@ -1,9 +1,8 @@
 use serde::Serialize;
 use std::{
   fs,
-  path::PathBuf,
+  path::{Path, PathBuf},
   process::Command,
-  time::{SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Serialize)]
@@ -28,14 +27,25 @@ fn latex_document(tikz_code: &str) -> String {
   )
 }
 
-fn output_dir() -> Result<PathBuf, String> {
-  let millis = SystemTime::now()
-    .duration_since(UNIX_EPOCH)
-    .map_err(|error| error.to_string())?
-    .as_millis();
-  let dir = std::env::temp_dir().join("tikz-drawer").join(millis.to_string());
-  fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
-  Ok(dir)
+/// Fixed workspace under OS temp; cleared before each compile so aux/log/pdf do not pile up.
+fn workspace_dir() -> PathBuf {
+  std::env::temp_dir().join("tikz-drawer").join("workspace")
+}
+
+fn clear_workspace(dir: &Path) -> Result<(), String> {
+  if dir.exists() {
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+      let path = entry.map_err(|e| e.to_string())?.path();
+      if path.is_dir() {
+        fs::remove_dir_all(&path).map_err(|e| e.to_string())?;
+      } else {
+        fs::remove_file(&path).map_err(|e| e.to_string())?;
+      }
+    }
+  } else {
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+  }
+  Ok(())
 }
 
 fn run_pdflatex(dir: &PathBuf) -> Result<std::process::Output, String> {
@@ -54,7 +64,9 @@ fn run_pdflatex(dir: &PathBuf) -> Result<std::process::Output, String> {
 
 #[tauri::command(rename_all = "camelCase")]
 fn compile_tikz(tikz_code: String) -> Result<CompileResult, String> {
-  let dir = output_dir()?;
+  let dir = workspace_dir();
+  clear_workspace(&dir)?;
+
   let tex_path = dir.join("drawing.tex");
   fs::write(&tex_path, latex_document(&tikz_code)).map_err(|error| error.to_string())?;
 
@@ -74,6 +86,122 @@ fn compile_tikz(tikz_code: String) -> Result<CompileResult, String> {
   })
 }
 
+#[tauri::command(rename_all = "camelCase")]
+fn copy_path(source: String, destination: String) -> Result<(), String> {
+  if let Some(parent) = Path::new(&destination).parent() {
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+  }
+  fs::copy(&source, &destination).map_err(|e| e.to_string())?;
+  Ok(())
+}
+
+fn pdftocairo_candidates() -> [&'static str; 4] {
+  [
+    "pdftocairo",
+    "/opt/homebrew/bin/pdftocairo",
+    "/usr/local/bin/pdftocairo",
+    "/Library/TeX/texbin/pdftocairo",
+  ]
+}
+
+fn try_pdftocairo(pdf: &Path, png_out: &Path) -> bool {
+  let parent = pdf.parent().unwrap_or_else(|| Path::new("."));
+  let tmp_base = parent.join("_tikz_drawer_raster");
+  let tmp_png_path = parent.join("_tikz_drawer_raster.png");
+
+  let _ = fs::remove_file(&tmp_png_path);
+
+  for bin in pdftocairo_candidates() {
+    let ok = Command::new(bin)
+      .args(["-png", "-singlefile", "-r", "200"])
+      .arg(pdf)
+      .arg(&tmp_base)
+      .status()
+      .map(|s| s.success())
+      .unwrap_or(false);
+    if ok && tmp_png_path.exists() {
+      let _ = fs::rename(&tmp_png_path, png_out);
+      return png_out.exists();
+    }
+    let _ = fs::remove_file(&tmp_png_path);
+  }
+  false
+}
+
+fn try_magick(pdf: &Path, png_out: &Path) -> bool {
+  let src = format!("{}[0]", pdf.display());
+  let dest = png_out.display().to_string();
+
+  for bin in ["magick", "convert"] {
+    let mut cmd = if bin == "magick" {
+      let mut c = Command::new("magick");
+      c.arg("convert");
+      c
+    } else {
+      Command::new(bin)
+    };
+    let ok = cmd
+      .args(["-density", "200", &src, &dest])
+      .status()
+      .map(|s| s.success())
+      .unwrap_or(false);
+    if ok && png_out.exists() {
+      return true;
+    }
+    let _ = fs::remove_file(png_out);
+  }
+  false
+}
+
+fn try_gs(pdf: &Path, png_out: &Path) -> bool {
+  let out = format!("{}", png_out.display());
+  for gs in ["gs", "gswin64c"] {
+    let ok = Command::new(gs)
+      .args([
+        "-dNOPAUSE",
+        "-dBATCH",
+        "-sDEVICE=pngalpha",
+        "-r200",
+        &format!("-sOutputFile={out}"),
+      ])
+      .arg(pdf)
+      .status()
+      .map(|s| s.success())
+      .unwrap_or(false);
+    if ok && png_out.exists() {
+      return true;
+    }
+    let _ = fs::remove_file(png_out);
+  }
+  false
+}
+
+/// Rasterize first PDF page to PNG next to the PDF (`drawing.png` in the same folder).
+#[tauri::command(rename_all = "camelCase")]
+fn rasterize_pdf_first_page(pdf_path: String) -> Result<String, String> {
+  let pdf = PathBuf::from(&pdf_path);
+  if !pdf.is_file() {
+    return Err("PDF 不存在".into());
+  }
+  let png_path = pdf.with_file_name("drawing.png");
+  let _ = fs::remove_file(&png_path);
+
+  if try_pdftocairo(&pdf, &png_path) {
+    return Ok(png_path.to_string_lossy().to_string());
+  }
+  if try_magick(&pdf, &png_path) {
+    return Ok(png_path.to_string_lossy().to_string());
+  }
+  if try_gs(&pdf, &png_path) {
+    return Ok(png_path.to_string_lossy().to_string());
+  }
+
+  Err(
+    "无法生成 PNG：请安装 Poppler（pdftocairo）、ImageMagick（magick）或 Ghostscript（gs）之一。"
+      .into(),
+  )
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -87,7 +215,13 @@ pub fn run() {
       }
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![compile_tikz])
+    .plugin(tauri_plugin_dialog::init())
+    .plugin(tauri_plugin_opener::init())
+    .invoke_handler(tauri::generate_handler![
+      compile_tikz,
+      copy_path,
+      rasterize_pdf_first_page,
+    ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
