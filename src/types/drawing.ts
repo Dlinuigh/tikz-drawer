@@ -130,6 +130,15 @@ export type PointElement = {
   style: DrawingStyle
 }
 
+/** 由「交点」工具计算生成，可与手绘「点」区分并在属性中单独编辑标签 */
+export type IntersectionPointElement = {
+  id: string
+  type: 'intersectionPoint'
+  center: Point
+  label: string
+  style: DrawingStyle
+}
+
 /** TikZ-style `\\node[...]` placement keywords (subset). */
 export type AxisNameTikzPlacement =
   | 'above'
@@ -175,6 +184,32 @@ export type AxesElement = {
   /** Extra offset (TikZ units) for y-axis name after default tip offset */
   labelYDx: number
   labelYDy: number
+  /** false：画布中不绘制坐标轴；TikZ 导出仍包含。缺省视为显示 */
+  canvasVisible?: boolean
+  /** 画布中是否绘制 x 轴半轴（刻度与名称跟随）；缺省 true；需 canvasVisible 不为 false */
+  canvasVisibleX?: boolean
+  /** 画布中是否绘制 y 轴半轴 */
+  canvasVisibleY?: boolean
+}
+
+/** 单条坐标轴（x 或 y），可独立参与求交与属性编辑 */
+export type AxisLineElement = {
+  id: string
+  type: 'axisLine'
+  orientation: 'x' | 'y'
+  origin: Point
+  min: number
+  max: number
+  style: DrawingStyle
+  tickStep: number
+  manualTicks: AxisTickMark[]
+  showTicks: boolean
+  showTickLabels: boolean
+  label: string
+  labelPlacement: AxisNameTikzPlacement
+  labelDx: number
+  labelDy: number
+  canvasVisible?: boolean
 }
 
 export type DrawingElement =
@@ -185,7 +220,9 @@ export type DrawingElement =
   | EllipseElement
   | PolylineElement
   | AxesElement
+  | AxisLineElement
   | PointElement
+  | IntersectionPointElement
 
 export type DraftElement = {
   type: 'line' | 'arc' | 'rectangle' | 'circle' | 'ellipse' | 'polyline' | 'point'
@@ -223,6 +260,7 @@ export const defaultAxesOptions: Pick<
   | 'labelXDy'
   | 'labelYDx'
   | 'labelYDy'
+  | 'canvasVisible'
 > = {
   tickStepX: 1,
   tickStepY: 1,
@@ -236,4 +274,32 @@ export const defaultAxesOptions: Pick<
   labelXDy: 0,
   labelYDx: 0,
   labelYDy: 0,
+  canvasVisible: true,
+}
+
+export function defaultAxisLineOptionsFor(
+  orientation: 'x' | 'y',
+): Pick<
+  AxisLineElement,
+  | 'tickStep'
+  | 'manualTicks'
+  | 'showTicks'
+  | 'showTickLabels'
+  | 'label'
+  | 'labelPlacement'
+  | 'labelDx'
+  | 'labelDy'
+  | 'canvasVisible'
+> {
+  return {
+    tickStep: 1,
+    manualTicks: [],
+    showTicks: true,
+    showTickLabels: true,
+    label: orientation === 'x' ? '$x$' : '$y$',
+    labelPlacement: orientation === 'x' ? 'right' : 'above',
+    labelDx: 0,
+    labelDy: 0,
+    canvasVisible: true,
+  }
 }

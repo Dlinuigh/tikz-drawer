@@ -520,6 +520,19 @@
   gap: 12px;
 }
 
+.properties-panel label.checkbox-row,
+.modal-content label.checkbox-row {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+
+.properties-panel label.checkbox-row input[type='checkbox'],
+.modal-content label.checkbox-row input[type='checkbox'] {
+  flex-shrink: 0;
+}
+
 .properties-panel {
   text-align: left;
 }
@@ -1015,7 +1028,18 @@ input {
 }
 
 .shape.intersection-pick {
-  stroke-width: 5;
+  /* stroke-width is controlled via React prop for reliable updates */
+}
+
+.intersection-point-marker {
+  cursor: pointer;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.intersection-point-marker.selected {
+  filter: drop-shadow(0 0 5px rgba(37, 99, 235, 0.7));
+  stroke-width: 4;
 }
 
 .shape-label {

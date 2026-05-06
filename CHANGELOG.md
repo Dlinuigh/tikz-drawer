@@ -4,6 +4,14 @@ All notable changes to TikZ Drawer will be documented in this file.
 
 ## Unreleased
 
+### 交接摘要（下一版本需求前）
+
+- **坐标轴**：`axisLine` 单轴 + 旧 `axes` 兼容；画布 X/Y 显隐仅 **View** 菜单两项，文案随状态（隐藏/显示）；合并轴支持 `canvasVisibleX`/`canvasVisibleY`；TikZ 仍输出完整轴。逻辑见 `src/lib/axisCanvas.ts`。
+- **菜单**：主窗口 `label: main`；`invoke('update_axis_canvas_menu_items')` 扁平参数同步轴项与属性栏标题；`useLayoutEffect([elements, propertiesOpen])`。属性栏默认收起，菜单占位「展开属性栏」。
+- **前端监听**：菜单事件 `Promise.all` + 卸载取消，避免 Strict Mode 下切换类菜单无效。
+- **交点**：已确认点写入 `committedIntersectionPairsRef`；0 交点不锁对；`geometry` 椭圆/圆弧折线修正。
+- **Rust**：`ViewMenuBarItems` 托管动态菜单项；`src-tauri/src/lib.rs` 菜单 `emit` 至主窗口。
+
 ### Added
 
 - **VSCode-like fixed window layout**: removed the large title header; app now fills the window with no page scrolling; compact left toolbar, flexible canvas area, collapsible right properties panel, and expandable bottom preview drawer.
@@ -33,9 +41,23 @@ All notable changes to TikZ Drawer will be documented in this file.
 - Added ellipse drawing from a center point and radius point.
 - Added polyline drawing with continuous point placement and explicit completion.
 - Added TikZ output for rectangles, circles, ellipses, and polylines.
+- **坐标轴（单轴）**：新增 `axisLine` 图元（x 或 y）；创建对话框可勾选只建 x、只建 y 或两根；属性面板 `AxisLineFields` 可编辑范围、刻度、轴名与画布可见性。旧 `axes` 合并图元仍兼容加载。
+- **交点工具**：坐标轴类图元（`axes` / `axisLine`）按当前范围展开为轴线段，可与直线、多段线、矩形、圆、椭圆、圆弧等参与同一套求交逻辑。
+
+### Fixed
+
+- **macOS 菜单**：主窗口 `label: "main"` + `event.id.as_ref()` + 向主窗口 `emit`。另：**React Strict Mode** 下菜单监听改为 `Promise.all` 一次性注册并在卸载时取消，避免重复监听导致切换类项（属性面板、栅格、坐标轴显隐等）执行偶数次而看似失效。
+- **View 菜单动态文案**：`update_axis_canvas_menu_items` 同步坐标轴项（画布可见→「隐藏 …」，不可见→「显示 …」）与 **属性栏**（展开→「隐藏属性栏」，收起→「展开属性栏」）；托管 `ViewMenuBarItems`（含 `properties_item`）。画布 tab 上 ☰ 按钮 `title` 与菜单一致。属性栏默认收起；原生菜单项占位标题亦为「展开属性栏」。
+- **交点工具**：同一对已确认创建交点的图元不再重复计算；求交结果为 **0 个点**时不锁住该对，可再次选取。
+- **椭圆–椭圆 / 椭圆–圆弧交点**：`ellipsePolyline` 与 `arcPolyline` 原先把每条Chord写成退化线段 `(pᵢ,pᵢ)`，线段求交永远为空；已改为正常的相邻顶点线段对。Newton-Raphson 精化增加残差判定以避免无效点。
 
 ### Changed
 
+- **坐标轴**：尚无坐标轴时，选中坐标轴工具**立即**打开范围对话框（不再依赖画布点击）；已有坐标轴时选中该工具不再弹出设置。画布可见性按 **X 轴 / Y 轴** 在 macOS **View** 菜单分别切换（文案随状态同步；无该朝向轴时对应项禁用）。合并型 `axes` 支持 `canvasVisibleX` / `canvasVisibleY`。TikZ 仍始终输出坐标轴。原点固定 TikZ `(0,0)`；属性面板已移除原点坐标编辑。
+- **交点工具**：选取坐标轴作为图元之一时，轴线与刻度线套用与其它图形一致的 `intersection-pick` 加粗描边。
+- **交点图元**：选中「交点」结果点时加粗描边与阴影（专用 `.intersection-point-marker`，避免 `.shape` 的 `fill: none` 破坏实心圆）。
+- **交点工具**：确认的交点创建为独立图元类型 `intersectionPoint`（与手绘 `point` 区分）；属性面板为「点」与「交点」提供「标签」编辑。
+- **交点工具**：切换到交点模式时清除画布选中态，避免 `.shape.selected` 仍把最后绘制的线条显示为加粗；与绘制下一条时选中转移到新图元、旧线变细的行为一致。
 - **Axes ticks**: step-based ticks now include **0** when it lies in range (previously skipped).
 - **View / coordinates**: TikZ origin stays at `(0,0)`; **Alt+drag** or **middle-mouse drag** pans the canvas by changing the view origin. **View** menu: *Center on Selection*, *Reset Canvas View*. **Grid** menu: toggle editor grid (`⌘G`), toggle grid in PDF export, *Grid Settings…* (bounds, step, color, line style). Export grid is independent from the editor grid (`showGridInExport`).
 - **Toolbar**: line mode (**两点 / 点斜**) and arc angle open as **floating menus** to the right of the toolbar; click the tool again, click outside, or **Esc** to close.
@@ -53,6 +75,7 @@ All notable changes to TikZ Drawer will be documented in this file.
 - Tauri capabilities: configure `opener:allow-open-path` with scope `{ "path": "$TEMP/tikz-drawer/**" }` so LaTeX PDFs under the temp workspace can be opened (string-only permission is not enough).
 - Updated `docs/PLAN.md` for compile workspace, preview/export commands, and prior interaction notes (line modes, axes, fraction input).
 - Updated README documentation links to point to the docs roadmap and Canvas roadmap archive.
+- **文档（下一版本前）**：新增 [`docs/README.md`](docs/README.md)、[`docs/plan_handoff_next_version.md`](docs/plan_handoff_next_version.md)；根 [`README.md`](README.md) 功能列表与文档链接对齐现状；[`CHANGELOG.md`](CHANGELOG.md) `Unreleased` 增加交接摘要；[`docs/PLAN.md`](docs/PLAN.md) 增加交接索引。
 
 ## 0.0.0 - 2026-04-29
 

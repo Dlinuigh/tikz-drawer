@@ -2,19 +2,26 @@ import { useState } from 'react'
 import { parseFlexibleNumber } from '../lib/parseNumber'
 import type { Point } from '../types/drawing'
 
+export type AxesBoundsPayload = {
+  xMin: number
+  xMax: number
+  yMin: number
+  yMax: number
+  createX: boolean
+  createY: boolean
+}
+
 type AxesBoundsModalProps = {
   open: boolean
   origin: Point | null
-  onConfirm: (bounds: { xMin: number; xMax: number; yMin: number; yMax: number }) => void
+  onConfirm: (bounds: AxesBoundsPayload) => void
   onCancel: () => void
 }
 
 function AxesBoundsForm({
-  origin,
   onConfirm,
   onCancel,
 }: {
-  origin: Point
   onConfirm: AxesBoundsModalProps['onConfirm']
   onCancel: () => void
 }) {
@@ -22,30 +29,59 @@ function AxesBoundsForm({
   const [xMax, setXMax] = useState('3')
   const [yMin, setYMin] = useState('-3')
   const [yMax, setYMax] = useState('3')
+  const [createX, setCreateX] = useState(true)
+  const [createY, setCreateY] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const submit = () => {
+    if (!createX && !createY) {
+      setError('请至少勾选创建 x 轴或 y 轴之一。')
+      return
+    }
     const xm = parseFlexibleNumber(xMin)
     const xx = parseFlexibleNumber(xMax)
     const ym = parseFlexibleNumber(yMin)
     const yx = parseFlexibleNumber(yMax)
-    if ([xm, xx, ym, yx].some((v) => Number.isNaN(v))) {
+    if (createX && (Number.isNaN(xm) || Number.isNaN(xx))) {
       setError('请输入有效的数字。')
       return
     }
-    if (xm >= xx || ym >= yx) {
-      setError('要求 x 下限 < x 上限，y 下限 < y 上限。')
+    if (createY && (Number.isNaN(ym) || Number.isNaN(yx))) {
+      setError('请输入有效的数字。')
       return
     }
-    onConfirm({ xMin: xm, xMax: xx, yMin: ym, yMax: yx })
+    if (createX && xm >= xx) {
+      setError('要求 x 下限 < x 上限。')
+      return
+    }
+    if (createY && ym >= yx) {
+      setError('要求 y 下限 < y 上限。')
+      return
+    }
+    onConfirm({
+      xMin: xm,
+      xMax: xx,
+      yMin: ym,
+      yMax: yx,
+      createX,
+      createY,
+    })
   }
 
   return (
     <div className="modal-panel" role="dialog" aria-labelledby="axes-modal-title" onMouseDown={(e) => e.stopPropagation()}>
       <h3 id="axes-modal-title">坐标轴范围</h3>
       <p className="hint">
-        原点：({origin.x}, {origin.y})（TikZ 坐标）。上下限可写分数，如 <code>2/3</code>、<code>-1/5</code>。
+        原点固定为 (0, 0)（TikZ）。勾选要创建的轴（可仅 x、仅 y 或两根）；上下限可写分数，如 <code>2/3</code>、<code>-1/5</code>。
       </p>
+      <label className="checkbox-row">
+        <input checked={createX} type="checkbox" onChange={(e) => setCreateX(e.target.checked)} />
+        创建 x 轴（水平）
+      </label>
+      <label className="checkbox-row">
+        <input checked={createY} type="checkbox" onChange={(e) => setCreateY(e.target.checked)} />
+        创建 y 轴（竖直）
+      </label>
       <label>
         x 下限
         <input value={xMin} onChange={(e) => setXMin(e.target.value)} type="text" inputMode="decimal" />
@@ -82,7 +118,7 @@ export function AxesBoundsModal({ open, origin, onConfirm, onCancel }: AxesBound
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
-      <AxesBoundsForm key={`${origin.x},${origin.y}`} origin={origin} onConfirm={onConfirm} onCancel={onCancel} />
+      <AxesBoundsForm key="axes-bounds" onConfirm={onConfirm} onCancel={onCancel} />
     </div>
   )
 }
@@ -234,7 +270,7 @@ function IntersectionForm({
     <div className="modal-panel" role="dialog" aria-labelledby="intersection-modal-title" onMouseDown={(e) => e.stopPropagation()}>
       <h3 id="intersection-modal-title">交点</h3>
       <p className="hint">
-        找到 {points.length} 个交点，为每个交点命名（将创建为点元素）。
+        找到 {points.length} 个交点，为每个交点命名（将创建为独立的「交点」图元，可在选中后用属性面板修改标签）。
       </p>
       {points.map((pt, i) => (
         <label key={i}>

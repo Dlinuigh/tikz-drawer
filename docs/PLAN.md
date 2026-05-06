@@ -38,10 +38,10 @@ flowchart LR
 - **圆弧**：两种定义模式 ——
   - 「两点+扫过角」：点击起点、终点，通过角度输入决定圆弧（默认模式）。
   - 「圆心+半径+角度」：点击圆心，在对话框输入半径 r、起始角 α、终止角 β。TikZ 语法 `arc[start angle=α, end angle=β, radius=r]`，角度以正 x 轴为 0°、逆时针为正。
-- **坐标轴**：点击原点后，在对话框中设置 x/y 上下限（支持负半轴）；属性中用选项卡配置原点、上下限、步长、手动刻度（位置与 TikZ 标记名）、轴线显示与轴名称位置（TikZ node 关键字 + 偏移）；数值支持 `1/3`。
+- **坐标轴**：选中坐标轴工具后**立即**打开范围对话框（仅当画布上尚无坐标轴图元时）；对话框可勾选只创建 **x 轴**、只创建 **y 轴**或两根（存为独立 `axisLine` 图元，可分别求交与编辑）。旧文件中的合并 `axes` 仍可加载。原点固定为 TikZ `(0,0)`。画布上 **X / Y** 显示独立控制：状态栏 **View** 列两个按钮；macOS 菜单 **View** 两项（文案随状态切换）。`axisLine` 用 `canvasVisible`；合并 `axes` 额外支持 `canvasVisibleX` / `canvasVisibleY`。TikZ 仍输出完整坐标轴。
 - **多段线**：Esc 结束绘制（≥2 点提交，否则取消），无额外按钮。
-- **交点**：选择「交点」工具后依次点击两个图元，系统自动计算交点并弹出命名对话框，确认后创建命名点元素。
-- **点元素**：通过交点工具或未来直接绘制创建，显示为小圆点和可选标签。
+- **交点**：选择「交点」工具后依次点击两个图元，系统自动计算交点并弹出命名对话框，确认后创建 **`intersectionPoint` 图元**（与手绘 `point` 区分），可在属性面板单独编辑标签。已成功确认创建交点的图元对会记入缓存，同一对不再重复计算；图元删除或新建画布会清除相关缓存。若无交点则不记入 pending，可再次尝试同一对。
+- **点元素**：手绘为 `type: 'point'`；交点工具生成为 `type: 'intersectionPoint'`；画布与 TikZ 表现相同（小圆点 + 可选 `label`）。
 - **吸附**：吸附到 grid 对应的点（使用网格配置中的 `gridStep`），非硬编码整数点。
 - **样式设置**：移至右侧属性面板。左侧工具栏无「样式」按钮；激活任意工具时右侧属性面板显示该工具的专属设置及默认线条样式。
 
@@ -90,3 +90,24 @@ flowchart LR
 - **自动编译**：点击「源码」tab 时同步 `tikzCode` 到编辑器后立即调用 `compileManualCode(tikzCode)`。
 - **下载按钮**：`download-btn-group` 分体按钮（主按钮 + ▾ 箭头），箭头展开绝对定位菜单；关闭菜单通过延迟注册 document click 事件。
 - **Rust 新增**：`read_file_binary` 命令读取任意文件二进制（用于加载 PNG 绕过 asset 协议作用域限制）。
+- **交点工具与线宽**：最后绘制的图元会因 `onCreate` 设为选中而套用 `.shape.selected`（CSS `stroke-width: 4`）显得偏粗；切换到「交点」时在 `Toolbar.onToolChange` 中 `setSelectedId(null)`，使已有线条恢复常规模拟线宽（逻辑上等价于选中转移到别处时的变细效果）。
+- **椭圆求交**：`src/lib/geometry.ts` 中 `ellipsePolyline` / `arcPolyline` 修正为按相邻采样点输出非退化线段，`ellipseEllipseIntersections` 与 `ellipseArcIntersections` 的折线求交方可得到候选点。
+- **坐标轴求交**：`computeIntersections` 的 `extractInfo` 对 `type === 'axes'` 按 `xMin`–`xMax`、`yMin`–`yMax` 与原点 y/x 生成两条轴线段（零长度轴不加入），与既有线段–圆/椭圆/圆弧等分支一致。
+- **交点图元**：`IntersectionPointElement`（`intersectionPoint`）写入 `elements`，`DrawingCanvas`/`tikz`/`elementCenter` 与 `point` 并行处理。
+
+## 2026-05-06 会话增量（macOS 菜单 / 交点对 / 单轴坐标）
+
+- **macOS 菜单**：`src-tauri/src/lib.rs` 中菜单事件用 `event.id.as_ref()` 匹配；事件优先向标签为 `main` 的窗口 `emit`（`tauri.conf.json` 窗口增加 `"label": "main"`），修复 View 中 **Toggle Properties Panel**、**Toggle Coordinate Axes on Canvas** 无响应。
+- **交点对去重**：`App.tsx` 使用 `committedIntersectionPairsRef`（确认创建且有点时写入）跳过已处理对；求交结果为 **0 个点**时不占用 pending key，避免误锁同一对。
+- **单轴图元**：新增 `AxisLineElement`（`axisLine`），几何/TikZ/画布与旧 `axes` 并行；创建对话框 `createX`/`createY`。
+- **属性面板**：选中 `axisLine` 时可编辑范围、刻度、轴名与画布可见性（`AxisLineFields`）。
+
+## 2026-05-06 会话增量（坐标轴 X/Y 画布开关）
+
+- **macOS View 菜单**：**X 轴** / **Y 轴** / **属性栏** 动态标题由 `invoke('update_axis_canvas_menu_items')` 同步（轴：隐藏/显示；属性栏：隐藏/展开）；`useLayoutEffect([elements, propertiesOpen])`。属性栏默认收起，菜单占位为「展开属性栏」。
+- **逻辑**：`src/lib/axisCanvas.ts` 统一「该朝向是否仍有图元」「是否任一显示」「整组切换」；合并 `axes` 增加可选字段 `canvasVisibleX` / `canvasVisibleY`，`DrawingCanvas` 按半轴绘制。
+- **菜单监听**：`App.tsx` 内对 `listen` 使用 `Promise.all` + 卸载取消，避免 Strict Mode 下异步逐个注册造成重复监听（切换类菜单表现为无效）。
+
+## 下一版本需求前
+
+- 交接浓缩说明见 **[`docs/plan_handoff_next_version.md`](./plan_handoff_next_version.md)**；[`CHANGELOG.md`](../CHANGELOG.md) `Unreleased` 顶部含 **交接摘要**；文档索引见 **[`docs/README.md`](./README.md)**。

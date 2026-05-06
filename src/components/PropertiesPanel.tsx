@@ -4,6 +4,7 @@ import { formatNumber } from '../lib/geometry'
 import { parseFlexibleNumber } from '../lib/parseNumber'
 import type {
   ArcSubtool,
+  AxisLineElement,
   AxisNameTikzPlacement,
   AxisTickMark,
   AxesElement,
@@ -31,6 +32,100 @@ const AXIS_NAME_PLACEMENT_OPTIONS: Array<{ value: AxisNameTikzPlacement; label: 
 ]
 
 type AxesPropTab = 'range' | 'ticks' | 'names'
+
+function AxisLineFields({
+  element,
+  onUpdate,
+}: {
+  element: AxisLineElement
+  onUpdate: (element: DrawingElement) => void
+}) {
+  return (
+    <>
+      <p className="hint">
+        {element.orientation === 'x' ? '水平 x 轴' : '竖直 y 轴'} · 原点 TikZ (0, 0)
+      </p>
+      <FractionalField
+        label={element.orientation === 'x' ? 'x 下限' : 'y 下限'}
+        value={element.min}
+        onCommit={(min) => onUpdate({ ...element, min })}
+      />
+      <FractionalField
+        label={element.orientation === 'x' ? 'x 上限' : 'y 上限'}
+        value={element.max}
+        onCommit={(max) => onUpdate({ ...element, max })}
+      />
+      <FractionalField
+        label="刻度步长"
+        value={element.tickStep}
+        onCommit={(tickStep) => onUpdate({ ...element, tickStep })}
+      />
+      <label className="checkbox-row">
+        <input
+          checked={element.showTicks}
+          type="checkbox"
+          onChange={(e) => onUpdate({ ...element, showTicks: e.target.checked })}
+        />
+        显示刻度线
+      </label>
+      <label className="checkbox-row">
+        <input
+          checked={element.showTickLabels}
+          type="checkbox"
+          onChange={(e) => onUpdate({ ...element, showTickLabels: e.target.checked })}
+        />
+        显示刻度标签
+      </label>
+      <ManualTickMarksEditor
+        elementId={element.id}
+        marks={element.manualTicks}
+        title="手动刻度（本轴）"
+        onChange={(manualTicks) => onUpdate({ ...element, manualTicks })}
+      />
+      <label>
+        轴名称（TikZ）
+        <input
+          type="text"
+          value={element.label}
+          onChange={(e) => onUpdate({ ...element, label: e.target.value })}
+        />
+      </label>
+      <label>
+        名称位置（node）
+        <select
+          value={element.labelPlacement}
+          onChange={(e) =>
+            onUpdate({ ...element, labelPlacement: e.target.value as AxisNameTikzPlacement })
+          }
+        >
+          {AXIS_NAME_PLACEMENT_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <FractionalField
+        label="名称 Δx"
+        value={element.labelDx}
+        onCommit={(labelDx) => onUpdate({ ...element, labelDx })}
+      />
+      <FractionalField
+        label="名称 Δy"
+        value={element.labelDy}
+        onCommit={(labelDy) => onUpdate({ ...element, labelDy })}
+      />
+      <label className="checkbox-row">
+        <input
+          checked={element.canvasVisible !== false}
+          type="checkbox"
+          onChange={(e) => onUpdate({ ...element, canvasVisible: e.target.checked })}
+        />
+        画布中显示
+      </label>
+    </>
+  )
+}
 
 function FractionalField({
   label,
@@ -162,7 +257,7 @@ function AxesTabs({
           aria-selected={tab === 'range'}
           onClick={() => setTab('range')}
         >
-          范围·原点
+          范围
         </button>
         <button
           className={`tab-chip ${tab === 'ticks' ? 'active' : ''}`}
@@ -186,18 +281,7 @@ function AxesTabs({
 
       {tab === 'range' && (
         <div className="tab-panel" role="tabpanel">
-          <FractionalField
-            key={`${element.id}-axes-ox-${element.origin.x}`}
-            label="原点 x（支持 1/3）"
-            value={element.origin.x}
-            onCommit={(originX) => onUpdate({ ...element, origin: { ...element.origin, x: originX } })}
-          />
-          <FractionalField
-            key={`${element.id}-axes-oy-${element.origin.y}`}
-            label="原点 y"
-            value={element.origin.y}
-            onCommit={(originY) => onUpdate({ ...element, origin: { ...element.origin, y: originY } })}
-          />
+          <p className="hint">原点固定为 TikZ (0, 0)，与画布点击位置无关。</p>
           <FractionalField
             key={`${element.id}-axes-xMin-${element.xMin}`}
             label="x 下限"
@@ -389,8 +473,10 @@ const elementTypeLabel: Record<DrawingElement['type'], string> = {
   circle: '圆',
   ellipse: '椭圆',
   polyline: '多段线',
-  axes: '坐标轴',
+  axes: '坐标轴（旧）',
+  axisLine: '坐标轴（单轴）',
   point: '点',
+  intersectionPoint: '交点',
 }
 
 const toolLabels: Record<Tool, string> = {
@@ -514,6 +600,12 @@ export function PropertiesPanel({
             <p className="hint">依次点击两个图元，系统将计算它们的交点并弹出命名对话框。</p>
           )}
 
+          {activeTool === 'axes' && (
+            <p className="hint">
+              选中本工具后将立刻打开对话框（尚无坐标轴图元时）。可勾选只建 x 轴、只建 y 轴或两根轴（两根为独立图元，可分别求交与编辑）。画布显示/隐藏：<strong>View</strong> 菜单中的 <strong>X 轴</strong> / <strong>Y 轴</strong> 两项（文案随当前状态切换）。
+            </p>
+          )}
+
           <hr />
 
           <p className="field-group-title">默认线条样式</p>
@@ -626,6 +718,18 @@ export function PropertiesPanel({
       <div className="properties-panel-scroll">
       <p className="element-id">{elementTypeLabel[selectedElement.type]} · {selectedElement.id}</p>
 
+      {(selectedElement.type === 'point' || selectedElement.type === 'intersectionPoint') && (
+        <label>
+          标签（TikZ <code>label</code>，支持 LaTeX）
+          <input
+            type="text"
+            value={selectedElement.label}
+            placeholder="留空则无文字"
+            onChange={(e) => onUpdate({ ...selectedElement, label: e.target.value })}
+          />
+        </label>
+      )}
+
       <label>
         起点箭头
         <select
@@ -734,6 +838,10 @@ export function PropertiesPanel({
             onChange={(event) => onUpdate({ ...selectedElement, sweepAngle: Number(event.target.value) })}
           />
         </label>
+      )}
+
+      {selectedElement.type === 'axisLine' && (
+        <AxisLineFields key={selectedElement.id} element={selectedElement} onUpdate={onUpdate} />
       )}
 
       {selectedElement.type === 'axes' && (

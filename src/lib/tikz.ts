@@ -1,4 +1,16 @@
-import type { ArcElement, AxesElement, CircleElement, DrawingElement, DrawingStyle, EllipseElement, GridConfig, Point, PointElement } from '../types/drawing'
+import type {
+  ArcElement,
+  AxesElement,
+  AxisLineElement,
+  CircleElement,
+  DrawingElement,
+  DrawingStyle,
+  EllipseElement,
+  GridConfig,
+  IntersectionPointElement,
+  Point,
+  PointElement,
+} from '../types/drawing'
 import { defaultGridConfig } from '../types/drawing'
 import {
   axesNameLabelOffset,
@@ -126,7 +138,7 @@ const ellipseToTikz = (element: EllipseElement): string => {
   return `\\draw${styleToTikzOptions(element.style)} ${pointToTikz(element.center)} ellipse[x radius=${formatNumber(xRadius)}, y radius=${formatNumber(yRadius)}];`
 }
 
-const pointToTikzElement = (element: PointElement): string =>
+const pointToTikzElement = (element: PointElement | IntersectionPointElement): string =>
   `\\draw${styleToTikzOptions(element.style)} ${pointToTikz(element.center)} node[circle, fill, inner sep=1.5pt, label={${element.label}}]{};`
 
 const polylineToTikz = (element: DrawingElement): string => {
@@ -220,14 +232,89 @@ const axesToTikz = (element: AxesElement): string => {
   return parts.join('\n')
 }
 
+const axisLineToTikz = (element: AxisLineElement): string => {
+  const ox = element.origin.x
+  const oy = element.origin.y
+  const δ = axesTickHalfLength
+  const axisStyle: DrawingStyle = { ...element.style, startArrow: 'none' }
+  const axisOpts = styleToTikzOptions(axisStyle)
+  const tickOpts = strokeStyleToTikzOptions(element.style)
+  const parts: string[] = []
+
+  if (element.orientation === 'x') {
+    const x1 = Math.min(element.min, element.max)
+    const x2 = Math.max(element.min, element.max)
+    const span = Math.abs(x2 - x1)
+    if (span > 1e-9) {
+      parts.push(
+        `\\draw${axisOpts} (${formatNumber(x1)},${formatNumber(oy)}) -- (${formatNumber(x2)},${formatNumber(oy)});`,
+      )
+    }
+    if (element.showTicks && span > 1e-9) {
+      const stepped = element.tickStep > 0 ? tickValuesInRange(x1, x2, element.tickStep) : []
+      const ticks = mergeAxisTickMarks(stepped, element.manualTicks, x1, x2)
+      for (const tick of ticks) {
+        const tx = tick.value
+        parts.push(
+          `\\draw${tickOpts} (${formatNumber(tx)},${formatNumber(oy + δ)}) -- (${formatNumber(tx)},${formatNumber(oy - δ)});`,
+        )
+        if (element.showTickLabels) {
+          parts.push(
+            `\\node[font=\\small,below] at (${formatNumber(tx)},${formatNumber(oy - δ)}) {${tickMarkBodyTikz(tick)}};`,
+          )
+        }
+      }
+    }
+    if (element.label.trim() && span > 1e-9) {
+      const px = x2 + axesNameLabelOffset + element.labelDx
+      const py = oy + element.labelDy
+      const pos = element.labelPlacement
+      parts.push(`\\node[font=\\small,${pos}] at (${formatNumber(px)},${formatNumber(py)}) {${element.label}};`)
+    }
+  } else {
+    const y1 = Math.min(element.min, element.max)
+    const y2 = Math.max(element.min, element.max)
+    const span = Math.abs(y2 - y1)
+    if (span > 1e-9) {
+      parts.push(
+        `\\draw${axisOpts} (${formatNumber(ox)},${formatNumber(y1)}) -- (${formatNumber(ox)},${formatNumber(y2)});`,
+      )
+    }
+    if (element.showTicks && span > 1e-9) {
+      const stepped = element.tickStep > 0 ? tickValuesInRange(y1, y2, element.tickStep) : []
+      const ticks = mergeAxisTickMarks(stepped, element.manualTicks, y1, y2)
+      for (const tick of ticks) {
+        const ty = tick.value
+        parts.push(
+          `\\draw${tickOpts} (${formatNumber(ox - δ)},${formatNumber(ty)}) -- (${formatNumber(ox + δ)},${formatNumber(ty)});`,
+        )
+        if (element.showTickLabels) {
+          parts.push(
+            `\\node[font=\\small,left] at (${formatNumber(ox - δ)},${formatNumber(ty)}) {${tickMarkBodyTikz(tick)}};`,
+          )
+        }
+      }
+    }
+    if (element.label.trim() && span > 1e-9) {
+      const px = ox + element.labelDx
+      const py = y2 + axesNameLabelOffset + element.labelDy
+      const pos = element.labelPlacement
+      parts.push(`\\node[font=\\small,${pos}] at (${formatNumber(px)},${formatNumber(py)}) {${element.label}};`)
+    }
+  }
+
+  return parts.join('\n')
+}
+
 export const elementToTikz = (element: DrawingElement): string => {
   if (element.type === 'line') return lineToTikz(element)
   if (element.type === 'rectangle') return rectangleToTikz(element)
   if (element.type === 'circle') return circleToTikz(element)
   if (element.type === 'ellipse') return ellipseToTikz(element)
   if (element.type === 'polyline') return polylineToTikz(element)
+  if (element.type === 'axisLine') return axisLineToTikz(element)
   if (element.type === 'axes') return axesToTikz(element)
-  if (element.type === 'point') return pointToTikzElement(element)
+  if (element.type === 'point' || element.type === 'intersectionPoint') return pointToTikzElement(element)
   return arcToTikz(element)
 }
 

@@ -1,4 +1,4 @@
-import type { DrawingElement, Point } from '../types/drawing'
+import type { DrawingElement, Point, RectangleElement } from '../types/drawing'
 
 export type CoordinateSystem = {
   width: number
@@ -219,13 +219,17 @@ const ellipseCurve = (center: Point, xr: number, yr: number): CurveFn => ({
 const refineIntersection = (
   c1: CurveFn, c2: CurveFn,
   guess1: number, guess2: number,
-  maxIter = 8,
+  maxIter = 12,
 ): Point | null => {
   let t1 = guess1, t2 = guess2
   for (let i = 0; i < maxIter; i++) {
     const p1 = c1.point(t1), p2 = c2.point(t2)
     const d1 = c1.derivative(t1), d2 = c2.derivative(t2)
     const fx = p1.x - p2.x, fy = p1.y - p2.y
+
+    if (Math.hypot(fx, fy) < 1e-10) {
+      return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 }
+    }
 
     // J = [d1.x, -d2.x; d1.y, -d2.y]
     const det = -d1.x * d2.y + d1.y * d2.x
@@ -237,9 +241,11 @@ const refineIntersection = (
     t1 -= dt1
     t2 -= dt2
 
-    if (Math.abs(dt1) < 1e-10 && Math.abs(dt2) < 1e-10) break
+    if (Math.abs(dt1) < 1e-12 && Math.abs(dt2) < 1e-12) break
   }
-  return { x: c1.point(t1).x, y: c1.point(t1).y }
+  const p1 = c1.point(t1), p2 = c2.point(t2)
+  if (Math.hypot(p1.x - p2.x, p1.y - p2.y) > 1e-4) return null
+  return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 }
 }
 
 /**
@@ -253,9 +259,7 @@ const ellipseCircleIntersections = (
   const cc = circleCurve(cx, cr)
   const results: Point[] = []
 
-  // Step 1: polyline 近似找到候选
   const steps = 60
-  const candidates: Array<[number, number]> = []
   for (let i = 0; i < steps; i++) {
     const t1 = (2 * Math.PI * i) / steps
     const t2 = (2 * Math.PI * (i + 1)) / steps
@@ -284,7 +288,6 @@ const ellipseEllipseIntersections = (
   const e2 = ellipseCurve(c2, xr2, yr2)
   const results: Point[] = []
 
-  const steps = 60
   const segs1 = ellipsePolyline(c1, xr1, yr1)
   const segs2 = ellipsePolyline(c2, xr2, yr2)
 
@@ -316,7 +319,6 @@ const ellipseArcIntersections = (
   const ac = circleCurve(geo.center, geo.radius)
   const results: Point[] = []
 
-  const steps = 60
   const segs1 = ellipsePolyline(c, xr, yr)
   const segs2 = arcPolyline(arcStart, arcEnd, sweepAngle)
 
@@ -424,18 +426,15 @@ const arcPolyline = (start: Point, end: Point, sweepAngle: number): Point[] => {
   const toRad = (deg: number) => (deg * Math.PI) / 180
   const steps = Math.max(4, Math.round(ARC_SEGMENTS * Math.abs(sweepAngle) / 360))
   const pts: Point[] = []
-  for (let i = 0; i <= steps; i++) {
-    const angle = startAngle + (endAngle - startAngle) * (i / steps)
-    const rad = toRad(angle)
-    const p = { x: center.x + radius * Math.cos(rad), y: center.y + radius * Math.sin(rad) }
-    if (i > 0) {
-      pts.push(pts[pts.length - 1], p) // pair each segment
-    } else {
-      pts.push(p) // first point alone
-    }
+  for (let i = 0; i < steps; i++) {
+    const ang1 = startAngle + (endAngle - startAngle) * (i / steps)
+    const ang2 = startAngle + (endAngle - startAngle) * ((i + 1) / steps)
+    const r1 = toRad(ang1), r2 = toRad(ang2)
+    pts.push(
+      { x: center.x + radius * Math.cos(r1), y: center.y + radius * Math.sin(r1) },
+      { x: center.x + radius * Math.cos(r2), y: center.y + radius * Math.sin(r2) },
+    )
   }
-  // Remove the trailing lone point (it was added as the first point of the next pair)
-  if (pts.length > 2) pts.pop()
   return pts
 }
 
@@ -445,16 +444,14 @@ const arcPolyline = (start: Point, end: Point, sweepAngle: number): Point[] => {
 const ELLIPSE_SEGMENTS = 36
 const ellipsePolyline = (center: Point, xRadius: number, yRadius: number): Point[] => {
   const pts: Point[] = []
-  for (let i = 0; i <= ELLIPSE_SEGMENTS; i++) {
-    const angle = (2 * Math.PI * i) / ELLIPSE_SEGMENTS
-    const p = { x: center.x + xRadius * Math.cos(angle), y: center.y + yRadius * Math.sin(angle) }
-    if (i > 0) {
-      pts.push(pts[pts.length - 1], p)
-    } else {
-      pts.push(p)
-    }
+  for (let i = 0; i < ELLIPSE_SEGMENTS; i++) {
+    const a1 = (2 * Math.PI * i) / ELLIPSE_SEGMENTS
+    const a2 = (2 * Math.PI * (i + 1)) / ELLIPSE_SEGMENTS
+    pts.push(
+      { x: center.x + xRadius * Math.cos(a1), y: center.y + yRadius * Math.sin(a1) },
+      { x: center.x + xRadius * Math.cos(a2), y: center.y + yRadius * Math.sin(a2) },
+    )
   }
-  if (pts.length > 2) pts.pop()
   return pts
 }
 
@@ -482,6 +479,28 @@ export const computeIntersections = (a: DrawingElement, b: DrawingElement): Poin
       info.ellipses.push({ center: el.center, xRadius: Math.abs(el.radiusPoint.x - el.center.x), yRadius: Math.abs(el.radiusPoint.y - el.center.y) })
     } else if (el.type === 'arc') {
       info.arcs.push({ start: el.start, end: el.end, sweepAngle: el.sweepAngle })
+    } else if (el.type === 'axes') {
+      // 与 `getAxesSegments` / 画布绘制一致：只把有长度的 x、y 轴线当作线段参与求交
+      const ox = el.origin.x
+      const oy = el.origin.y
+      const xStart = { x: el.xMin, y: oy }
+      const xEnd = { x: el.xMax, y: oy }
+      const yStart = { x: ox, y: el.yMin }
+      const yEnd = { x: ox, y: el.yMax }
+      const axesEps = 1e-9
+      if (Math.abs(xEnd.x - xStart.x) > axesEps) info.segs.push(xStart, xEnd)
+      if (Math.abs(yEnd.y - yStart.y) > axesEps) info.segs.push(yStart, yEnd)
+    } else if (el.type === 'axisLine') {
+      const ox = el.origin.x
+      const oy = el.origin.y
+      const lo = Math.min(el.min, el.max)
+      const hi = Math.max(el.min, el.max)
+      const axesEps = 1e-9
+      if (el.orientation === 'x' && hi - lo > axesEps) {
+        info.segs.push({ x: lo, y: oy }, { x: hi, y: oy })
+      } else if (el.orientation === 'y' && hi - lo > axesEps) {
+        info.segs.push({ x: ox, y: lo }, { x: ox, y: hi })
+      }
     }
 
     return info

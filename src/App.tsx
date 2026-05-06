@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import './App.css'
@@ -9,11 +9,27 @@ import type { CompileResult } from './components/PreviewPanel'
 import { PropertiesPanel } from './components/PropertiesPanel'
 import { StatusBar } from './components/StatusBar'
 import { Toolbar } from './components/Toolbar'
+import {
+  anyAxisOrientationShown,
+  hasAxisOrientation,
+  toggleAxisOrientationVisibility,
+} from './lib/axisCanvas'
 import { tikzCenterOfElement } from './lib/elementCenter'
 import { buildTikzPicture } from './lib/tikz'
 import { computeIntersections, coordinateSystemWithOrigin, defaultCoordinateSystem, defaultViewOrigin, snapTikzPoint } from './lib/geometry'
-import type { ArcSubtool, CircleSubtool, DraftElement, DrawingElement, DrawingStyle, EllipseSubtool, GridConfig, LineSubtool, Point, Tool } from './types/drawing'
-import { defaultAxesOptions, defaultGridConfig, defaultStyle } from './types/drawing'
+import type {
+  ArcSubtool,
+  CircleSubtool,
+  DraftElement,
+  DrawingElement,
+  DrawingStyle,
+  EllipseSubtool,
+  GridConfig,
+  LineSubtool,
+  Point,
+  Tool,
+} from './types/drawing'
+import { defaultAxisLineOptionsFor, defaultGridConfig, defaultStyle } from './types/drawing'
 
 const createId = () => crypto.randomUUID()
 
@@ -91,7 +107,25 @@ function App() {
   const gridConfigRef = useRef(gridConfig)
   gridConfigRef.current = gridConfig
 
+  const committedIntersectionPairsRef = useRef<Set<string>>(new Set())
+  const lastIntersectionPairKeyRef = useRef<string | null>(null)
+
+  const purgeIntersectionPairsForId = useCallback((id: string) => {
+    const sep = '\u0000'
+    committedIntersectionPairsRef.current = new Set(
+      [...committedIntersectionPairsRef.current].filter((k) => {
+        const parts = k.split(sep)
+        return !parts.includes(id)
+      }),
+    )
+  }, [])
+
+  const toggleAxisCanvasOrientation = useCallback((orientation: 'x' | 'y') => {
+    setElements((els) => toggleAxisOrientationVisibility(els, orientation))
+  }, [])
+
   const updateElement = (updatedElement: DrawingElement) => {
+    purgeIntersectionPairsForId(updatedElement.id)
     setElements((currentElements) =>
       currentElements.map((element) => (element.id === updatedElement.id ? updatedElement : element)),
     )
@@ -108,23 +142,6 @@ function App() {
     setArcAngle(angle)
     if (selectedElement?.type === 'arc') {
       updateElement({ ...selectedElement, sweepAngle: angle })
-    }
-  }
-
-  const compileTikz = async () => {
-    setIsCompiling(true)
-    setCompileResult(null)
-
-    try {
-      const result = await invoke<CompileResult>('compile_tikz', { tikzCode })
-      setCompileResult(result)
-    } catch (error) {
-      setCompileResult({
-        success: false,
-        log: error instanceof Error ? error.message : String(error),
-      })
-    } finally {
-      setIsCompiling(false)
     }
   }
 
@@ -204,158 +221,169 @@ function App() {
     return () => document.removeEventListener('contextmenu', handler)
   }, [])
 
-  // macOS menu bar event listeners
+  // macOS View 菜单：坐标轴与属性栏文案均表示「下一步操作」（扁平 IPC 参数与 #[command(rename_all)] 对齐）
+  useLayoutEffect(() => {
+    const hasX = hasAxisOrientation(elements, 'x')
+    const hasY = hasAxisOrientation(elements, 'y')
+    const xShown = anyAxisOrientationShown(elements, 'x')
+    const yShown = anyAxisOrientationShown(elements, 'y')
+    void (async () => {
+      try {
+        await invoke('update_axis_canvas_menu_items', {
+          xLabel: hasX ? (xShown ? '隐藏 X 轴' : '显示 X 轴') : '（无 X 轴）',
+          yLabel: hasY ? (yShown ? '隐藏 Y 轴' : '显示 Y 轴') : '（无 Y 轴）',
+          xEnabled: hasX,
+          yEnabled: hasY,
+          propertiesLabel: propertiesOpen ? '隐藏属性栏' : '展开属性栏',
+        })
+      } catch {
+        /* Web 或非 Tauri */
+      }
+    })()
+  }, [elements, propertiesOpen])
+
+  // macOS 菜单事件：用 Promise.all 一次性注册，避免 Strict Mode 下异步逐个 listen 导致重复注册（切换类菜单会执行偶数次而表现为无效）。
   useEffect(() => {
-    const unlisteners: Array<() => void> = []
+    let cancelled = false
+    let registered: Array<() => void> = []
 
-    const setupListeners = async () => {
-      const ul1 = await listen('menu-new-canvas', () => {
-        setElements([])
-        setDraft(null)
-        setSelectedId(null)
-        setAxesModalOrigin(null)
-        setLineSlopeAnchor(null)
-        setCircleRadiusCenter(null)
-        setEllipseRadiiCenter(null)
-        setArcCenterAnglesCenter(null)
-        setIntersectionPickIds([])
-        setViewOrigin(defaultViewOrigin())
-      })
-      unlisteners.push(ul1)
-
-      const ulCenter = await listen('menu-center-on-selection', () => {
-        const id = selectedIdRef.current
-        const el = elementsRef.current.find((e) => e.id === id)
-        if (!el) return
-        const c = tikzCenterOfElement(el)
-        if (!c) return
-        const w = defaultCoordinateSystem.width
-        const h = defaultCoordinateSystem.height
-        const ppu = defaultCoordinateSystem.pixelsPerUnit
-        setViewOrigin({ x: w / 2 - c.x * ppu, y: h / 2 + c.y * ppu })
-      })
-      unlisteners.push(ulCenter)
-
-      const ulReset = await listen('menu-reset-view', () => {
-        setViewOrigin(defaultViewOrigin())
-      })
-      unlisteners.push(ulReset)
-
-      const ulGridCanvas = await listen('menu-grid-toggle-canvas', () => {
-        setGridConfig((gc) => ({ ...gc, showGrid: !gc.showGrid }))
-      })
-      unlisteners.push(ulGridCanvas)
-
-      const ulGridExport = await listen('menu-grid-toggle-export', () => {
-        setGridConfig((gc) => ({ ...gc, showGridInExport: !gc.showGridInExport }))
-      })
-      unlisteners.push(ulGridExport)
-
-      const ulGridSettings = await listen('menu-grid-settings', () => {
-        setGridSettingsOpen(true)
-      })
-      unlisteners.push(ulGridSettings)
-
-      const ulSettings = await listen('menu-settings', () => {
-        setGridSettingsOpen(true)
-      })
-      unlisteners.push(ulSettings)
-
-      const ul2 = await listen('menu-compile', async () => {
-        setIsCompiling(true)
-        setCompileResult(null)
-        try {
-          const code = buildTikzPicture(elementsRef.current, gridConfigRef.current)
-          const result = await invoke<CompileResult>('compile_tikz', { tikzCode: code })
-          setCompileResult(result)
-        } catch (error) {
-          setCompileResult({
-            success: false,
-            log: error instanceof Error ? error.message : String(error),
-          })
-        } finally {
-          setIsCompiling(false)
+    ;(async () => {
+      try {
+        const unls = await Promise.all([
+          listen('menu-new-canvas', () => {
+            setElements([])
+            setDraft(null)
+            setSelectedId(null)
+            setAxesModalOrigin(null)
+            setLineSlopeAnchor(null)
+            setCircleRadiusCenter(null)
+            setEllipseRadiiCenter(null)
+            setArcCenterAnglesCenter(null)
+            setIntersectionPickIds([])
+            committedIntersectionPairsRef.current.clear()
+            lastIntersectionPairKeyRef.current = null
+            setViewOrigin(defaultViewOrigin())
+          }),
+          listen('menu-center-on-selection', () => {
+            const id = selectedIdRef.current
+            const el = elementsRef.current.find((e) => e.id === id)
+            if (!el) return
+            const c = tikzCenterOfElement(el)
+            if (!c) return
+            const w = defaultCoordinateSystem.width
+            const h = defaultCoordinateSystem.height
+            const ppu = defaultCoordinateSystem.pixelsPerUnit
+            setViewOrigin({ x: w / 2 - c.x * ppu, y: h / 2 + c.y * ppu })
+          }),
+          listen('menu-reset-view', () => {
+            setViewOrigin(defaultViewOrigin())
+          }),
+          listen('menu-grid-toggle-canvas', () => {
+            setGridConfig((gc) => ({ ...gc, showGrid: !gc.showGrid }))
+          }),
+          listen('menu-grid-toggle-export', () => {
+            setGridConfig((gc) => ({ ...gc, showGridInExport: !gc.showGridInExport }))
+          }),
+          listen('menu-grid-settings', () => {
+            setGridSettingsOpen(true)
+          }),
+          listen('menu-toggle-axes-x-canvas', () => {
+            toggleAxisCanvasOrientation('x')
+          }),
+          listen('menu-toggle-axes-y-canvas', () => {
+            toggleAxisCanvasOrientation('y')
+          }),
+          listen('menu-settings', () => {
+            setGridSettingsOpen(true)
+          }),
+          listen('menu-compile', async () => {
+            setIsCompiling(true)
+            setCompileResult(null)
+            try {
+              const code = buildTikzPicture(elementsRef.current, gridConfigRef.current)
+              const result = await invoke<CompileResult>('compile_tikz', { tikzCode: code })
+              setCompileResult(result)
+            } catch (error) {
+              setCompileResult({
+                success: false,
+                log: error instanceof Error ? error.message : String(error),
+              })
+            } finally {
+              setIsCompiling(false)
+            }
+          }),
+          listen('menu-copy-code', async () => {
+            try {
+              await navigator.clipboard.writeText(buildTikzPicture(elementsRef.current, gridConfigRef.current))
+            } catch {
+              // ignore
+            }
+          }),
+          listen('menu-open-pdf', async () => {
+            const p = compileResultRef.current?.pdfPath
+            if (p) {
+              try {
+                const { openPath } = await import('@tauri-apps/plugin-opener')
+                await openPath(p)
+              } catch {
+                // ignore
+              }
+            }
+          }),
+          listen('menu-export-pdf', async () => {
+            const src = compileResultRef.current?.pdfPath
+            if (!src) return
+            try {
+              const { save } = await import('@tauri-apps/plugin-dialog')
+              const dest = await save({
+                defaultPath: 'tikz-drawer.pdf',
+                filters: [{ name: 'PDF', extensions: ['pdf'] }],
+              })
+              if (!dest) return
+              await invoke('copy_path', { source: src, destination: dest })
+            } catch {
+              // ignore
+            }
+          }),
+          listen('menu-toggle-properties', () => {
+            setPropertiesOpen((p) => !p)
+          }),
+          listen('menu-toggle-tikz', () => {
+            setCentralTab('preview')
+          }),
+          listen('menu-toggle-pdf', () => {
+            setCentralTab('preview')
+          }),
+          listen('menu-export-png', async () => {
+            const pdfPath = compileResultRef.current?.pdfPath
+            if (!pdfPath) return
+            try {
+              const pngPath = await invoke<string>('rasterize_pdf_first_page', { pdfPath })
+              const { save } = await import('@tauri-apps/plugin-dialog')
+              const dest = await save({
+                defaultPath: 'tikz-drawer.png',
+                filters: [{ name: 'PNG', extensions: ['png'] }],
+              })
+              if (!dest) return
+              await invoke('copy_path', { source: pngPath, destination: dest })
+            } catch {
+              // ignore
+            }
+          }),
+        ])
+        if (cancelled) {
+          unls.forEach((u) => u())
+          return
         }
-      })
-      unlisteners.push(ul2)
-
-      const ul3 = await listen('menu-copy-code', async () => {
-        try {
-          await navigator.clipboard.writeText(buildTikzPicture(elementsRef.current, gridConfigRef.current))
-        } catch {
-          // ignore
-        }
-      })
-      unlisteners.push(ul3)
-
-      const ul4 = await listen('menu-open-pdf', async () => {
-        const p = compileResultRef.current?.pdfPath
-        if (p) {
-          try {
-            const { openPath } = await import('@tauri-apps/plugin-opener')
-            await openPath(p)
-          } catch {
-            // ignore
-          }
-        }
-      })
-      unlisteners.push(ul4)
-
-      const ul5 = await listen('menu-export-pdf', async () => {
-        const src = compileResultRef.current?.pdfPath
-        if (!src) return
-        try {
-          const { save } = await import('@tauri-apps/plugin-dialog')
-          const dest = await save({
-            defaultPath: 'tikz-drawer.pdf',
-            filters: [{ name: 'PDF', extensions: ['pdf'] }],
-          })
-          if (!dest) return
-          await invoke('copy_path', { source: src, destination: dest })
-        } catch {
-          // ignore
-        }
-      })
-      unlisteners.push(ul5)
-
-      const ulToggleProp = await listen('menu-toggle-properties', () => {
-        setPropertiesOpen((p) => !p)
-      })
-      unlisteners.push(ulToggleProp)
-
-      const ulToggleTikz = await listen('menu-toggle-tikz', () => {
-        setCentralTab('preview')
-      })
-      unlisteners.push(ulToggleTikz)
-
-      const ulTogglePdf = await listen('menu-toggle-pdf', () => {
-        setCentralTab('preview')
-      })
-      unlisteners.push(ulTogglePdf)
-
-      const ul6 = await listen('menu-export-png', async () => {
-        const pdfPath = compileResultRef.current?.pdfPath
-        if (!pdfPath) return
-        try {
-          const pngPath = await invoke<string>('rasterize_pdf_first_page', { pdfPath })
-          const { save } = await import('@tauri-apps/plugin-dialog')
-          const dest = await save({
-            defaultPath: 'tikz-drawer.png',
-            filters: [{ name: 'PNG', extensions: ['png'] }],
-          })
-          if (!dest) return
-          await invoke('copy_path', { source: pngPath, destination: dest })
-        } catch {
-          // ignore
-        }
-      })
-      unlisteners.push(ul6)
-    }
-
-    setupListeners()
+        registered = unls
+      } catch {
+        /* 浏览器等非 Tauri 环境 */
+      }
+    })()
 
     return () => {
-      unlisteners.forEach((fn) => fn())
+      cancelled = true
+      registered.forEach((fn) => fn())
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -370,21 +398,34 @@ function App() {
           if (!axesModalOrigin) {
             return
           }
-          const element: DrawingElement = {
-            id: createId(),
-            type: 'axes',
-            origin: axesModalOrigin,
-            xMin: bounds.xMin,
-            xMax: bounds.xMax,
-            yMin: bounds.yMin,
-            yMax: bounds.yMax,
-            style: currentStyle,
-            ...defaultAxesOptions,
-            manualTicksX: [],
-            manualTicksY: [],
+          const origin = { x: 0, y: 0 }
+          const created: DrawingElement[] = []
+          if (bounds.createX) {
+            created.push({
+              id: createId(),
+              type: 'axisLine',
+              orientation: 'x',
+              origin,
+              min: bounds.xMin,
+              max: bounds.xMax,
+              style: currentStyle,
+              ...defaultAxisLineOptionsFor('x'),
+            })
           }
-          setElements((currentElements) => [...currentElements, element])
-          setSelectedId(element.id)
+          if (bounds.createY) {
+            created.push({
+              id: createId(),
+              type: 'axisLine',
+              orientation: 'y',
+              origin,
+              min: bounds.yMin,
+              max: bounds.yMax,
+              style: currentStyle,
+              ...defaultAxisLineOptionsFor('y'),
+            })
+          }
+          setElements((currentElements) => [...currentElements, ...created])
+          setSelectedId(created[created.length - 1]?.id ?? null)
           setAxesModalOrigin(null)
         }}
       />
@@ -392,11 +433,19 @@ function App() {
       <IntersectionModal
         open={intersectionPoints.length > 0}
         points={intersectionPoints}
-        onCancel={() => { setIntersectionPoints([]); setIntersectionPickIds([]) }}
+        onCancel={() => {
+          setIntersectionPoints([])
+          setIntersectionPickIds([])
+          lastIntersectionPairKeyRef.current = null
+        }}
         onConfirm={(names) => {
+          if (intersectionPoints.length > 0 && lastIntersectionPairKeyRef.current) {
+            committedIntersectionPairsRef.current.add(lastIntersectionPairKeyRef.current)
+          }
+          lastIntersectionPairKeyRef.current = null
           const newElements: DrawingElement[] = intersectionPoints.map((pt, i) => ({
             id: createId(),
-            type: 'point',
+            type: 'intersectionPoint',
             center: pt,
             label: names[i] ?? '',
             style: currentStyle,
@@ -537,7 +586,7 @@ function App() {
                   className={`tab-bar-action-btn${propertiesOpen ? ' open' : ''}`}
                   type="button"
                   onClick={() => setPropertiesOpen((p) => !p)}
-                  title={propertiesOpen ? '关闭属性面板' : '打开属性面板'}
+                  title={propertiesOpen ? '隐藏属性栏' : '展开属性栏'}
                 >☰</button>
               ) : (
                 <div className="download-btn-group">
@@ -579,12 +628,20 @@ function App() {
                   onToolChange={(tool) => {
                     setActiveTool(tool)
                     setDraft(null)
-                    setAxesModalOrigin(null)
                     setLineSlopeAnchor(null)
                     setCircleRadiusCenter(null)
                     setEllipseRadiiCenter(null)
                     setArcCenterAnglesCenter(null)
                     setIntersectionPickIds([])
+                    if (tool === 'intersection') {
+                      setSelectedId(null)
+                    }
+                    if (tool === 'axes') {
+                      const hasAxes = elementsRef.current.some((e) => e.type === 'axes' || e.type === 'axisLine')
+                      setAxesModalOrigin(hasAxes ? null : { x: 0, y: 0 })
+                    } else {
+                      setAxesModalOrigin(null)
+                    }
                   }}
                 />
               </div>
@@ -601,7 +658,6 @@ function App() {
                 gridConfig={gridConfig}
                 lineSubtool={lineSubtool}
                 selectedId={selectedId}
-                onAxesOriginPick={(origin) => setAxesModalOrigin(origin)}
                 onCreate={(element) => {
                   setElements((currentElements) => [...currentElements, element])
                   setSelectedId(element.id)
@@ -612,21 +668,29 @@ function App() {
                 onEllipseRadiiCenterPick={(center) => setEllipseRadiiCenter(center)}
                 onArcCenterAnglesCenterPick={(center) => setArcCenterAnglesCenter(center)}
                 onIntersectionElementPick={(id) => {
-                  setIntersectionPickIds((prev) => {
-                    if (prev.includes(id)) return prev
-                    const next = [...prev, id]
-                    if (next.length === 2) return []  // clear immediately
-                    return next
-                  })
-                  // compute AFTER state reset so bold clears in same render
-                  const current = intersectionPickIds
-                  if (!current.includes(id) && current.length === 1) {
-                    const elA = elementsRef.current.find((e) => e.id === current[0])
-                    const elB = elementsRef.current.find((e) => e.id === id)
-                    if (elA && elB) {
-                      setIntersectionPoints(computeIntersections(elA, elB))
-                    }
+                  const picks = intersectionPickIds
+                  if (picks.includes(id)) return
+                  if (picks.length === 0) {
+                    setIntersectionPickIds([id])
+                    return
                   }
+                  // Step 1: clear picks → triggers render with thin lines
+                  setIntersectionPickIds([])
+                  // Step 2: defer computation to next microtask, after React has committed the clear
+                  const a = picks[0], b = id
+                  queueMicrotask(() => {
+                    const elA = elementsRef.current.find((e) => e.id === a)
+                    const elB = elementsRef.current.find((e) => e.id === b)
+                    if (!elA || !elB) return
+                    const pairKey = [a, b].sort().join('\u0000')
+                    if (committedIntersectionPairsRef.current.has(pairKey)) {
+                      setIntersectionPickIds([])
+                      return
+                    }
+                    const pts = computeIntersections(elA, elB)
+                    lastIntersectionPairKeyRef.current = pts.length > 0 ? pairKey : null
+                    setIntersectionPoints(pts)
+                  })
                 }}
                 intersectionPickIds={intersectionPickIds}
                 onSelect={setSelectedId}
@@ -720,6 +784,7 @@ function App() {
             onArcAngleChange={updateArcAngle}
             onStyleChange={updateStyle}
             onDelete={(id) => {
+              purgeIntersectionPairsForId(id)
               setElements((currentElements) => currentElements.filter((element) => element.id !== id))
               setSelectedId(null)
             }}
@@ -731,9 +796,7 @@ function App() {
       {/* 浮动通知 */}
       {copyHint && <div className="toast-notification">{copyHint}</div>}
 
-      <StatusBar
-        gridConfig={gridConfig}
-      />
+      <StatusBar gridConfig={gridConfig} />
 
       <GridSettingsModal
         gridConfig={gridConfig}

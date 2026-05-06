@@ -30,7 +30,6 @@ type DrawingCanvasProps = {
   onCreate: (element: DrawingElement) => void
   onDraftChange: (draft: DraftElement | null) => void
   onSelect: (id: string | null) => void
-  onAxesOriginPick: (origin: Point) => void
   onLineSlopeAnchorPick: (anchor: Point) => void
   onCircleRadiusCenterPick: (center: Point) => void
   onEllipseRadiiCenterPick: (center: Point) => void
@@ -175,7 +174,6 @@ export function DrawingCanvas({
   onCreate,
   onDraftChange,
   onSelect,
-  onAxesOriginPick,
   onLineSlopeAnchorPick,
   onCircleRadiusCenterPick,
   onEllipseRadiiCenterPick,
@@ -228,11 +226,6 @@ export function DrawingCanvas({
 
     if (activeTool === 'point') {
       onCreate({ id: createId(), type: 'point', center: point, label: '', style: currentStyle })
-      return
-    }
-
-    if (activeTool === 'axes') {
-      onAxesOriginPick(point)
       return
     }
 
@@ -337,13 +330,14 @@ export function DrawingCanvas({
       }
     }
     const shapeClass = selected ? 'shape selected' : isIntersectionPick ? 'shape intersection-pick' : 'shape'
+    const pickBold = activeTool === 'intersection' && intersectionPickIds.includes(element.id)
     const commonProps = {
       className: shapeClass,
       opacity: element.style.opacity,
       stroke: element.style.drawColor,
       strokeLinecap: svgLineCap[element.style.lineCap],
       strokeLinejoin: element.style.lineJoin,
-      strokeWidth: element.style.lineWidth * 2,
+      strokeWidth: pickBold ? 5 : element.style.lineWidth * 2,
       strokeDasharray: lineDash(element.style),
       markerEnd: markerEnd(element.style),
       markerStart: markerStart(element.style),
@@ -428,29 +422,249 @@ export function DrawingCanvas({
       )
     }
 
-    if (element.type === 'axes') {
-      const { x, y } = getAxesSegments(element.origin, element.xMin, element.xMax, element.yMin, element.yMax)
+    if (element.type === 'axisLine') {
+      if (element.canvasVisible === false) {
+        return null
+      }
       const ox = element.origin.x
       const oy = element.origin.y
       const δ = axesTickHalfLength
+      const axesShapeClass = selected
+        ? 'shape selected'
+        : isIntersectionPick
+          ? 'shape intersection-pick'
+          : 'shape'
+      const axesStrokeW = pickBold ? 5 : element.style.lineWidth * 2
       const axisStrokeProps = {
-        className: selected ? 'shape selected' : 'shape',
+        className: axesShapeClass,
         opacity: element.style.opacity,
         stroke: element.style.drawColor,
         strokeLinecap: svgLineCap[element.style.lineCap],
         strokeLinejoin: element.style.lineJoin,
-        strokeWidth: element.style.lineWidth * 2,
+        strokeWidth: axesStrokeW,
+        strokeDasharray: lineDash(element.style),
+        markerEnd: markerEnd(element.style),
+      }
+      const tickStrokeProps = {
+        className: axesShapeClass,
+        opacity: element.style.opacity,
+        stroke: element.style.drawColor,
+        strokeLinecap: svgLineCap[element.style.lineCap],
+        strokeLinejoin: element.style.lineJoin,
+        strokeWidth: axesStrokeW,
+        strokeDasharray: lineDash(element.style),
+      }
+      const tickLabelProps = {
+        className: selected ? 'axes-tick-label selected' : 'axes-tick-label',
+        fill: element.style.drawColor,
+        opacity: element.style.opacity,
+        fontSize: 11,
+      }
+      const nameLabelProps = {
+        className: selected ? 'axes-name-label selected' : 'axes-name-label',
+        fill: element.style.drawColor,
+        opacity: element.style.opacity,
+        fontSize: 13,
+      }
+      const handleAxisLineClick = (event: MouseEvent) => {
+        handleElementClick(event)
+      }
+      const nodes: ReactNode[] = []
+
+      if (element.orientation === 'x') {
+        const x1 = Math.min(element.min, element.max)
+        const x2 = Math.max(element.min, element.max)
+        const span = Math.abs(x2 - x1)
+        const pStart = tikzToSvg({ x: x1, y: oy }, cs)
+        const pEnd = tikzToSvg({ x: x2, y: oy }, cs)
+        if (span > axesEpsilon) {
+          nodes.push(
+            <line
+              key={`${element.id}-axis`}
+              {...axisStrokeProps}
+              x1={pStart.x}
+              x2={pEnd.x}
+              y1={pStart.y}
+              y2={pEnd.y}
+              onClick={handleAxisLineClick}
+            />,
+          )
+        }
+        if (element.showTicks && span > axesEpsilon) {
+          const stepped = element.tickStep > 0 ? tickValuesInRange(x1, x2, element.tickStep) : []
+          const ticks = mergeAxisTickMarks(stepped, element.manualTicks, x1, x2)
+          for (let i = 0; i < ticks.length; i++) {
+            const tick = ticks[i]
+            const tx = tick.value
+            const hi = tikzToSvg({ x: tx, y: oy + δ }, cs)
+            const lo = tikzToSvg({ x: tx, y: oy - δ }, cs)
+            nodes.push(
+              <line
+                key={`${element.id}-xt-${i}-${tx}`}
+                {...tickStrokeProps}
+                x1={hi.x}
+                x2={lo.x}
+                y1={hi.y}
+                y2={lo.y}
+                onClick={handleAxisLineClick}
+              />,
+            )
+            if (element.showTickLabels) {
+              const labelPos = tikzToSvg({ x: tx, y: oy - δ - axesTickLabelOffset * 0.45 }, cs)
+              nodes.push(
+                <text
+                  key={`${element.id}-xtl-${i}-${tx}`}
+                  {...tickLabelProps}
+                  textAnchor="middle"
+                  x={labelPos.x}
+                  y={labelPos.y}
+                  onClick={handleAxisLineClick}
+                >
+                  {tickMarkDisplayLabel(tick)}
+                </text>,
+              )
+            }
+          }
+        }
+        if (element.label.trim() && span > axesEpsilon) {
+          const p = tikzToSvg(
+            { x: x2 + axesNameLabelOffset + element.labelDx, y: oy + element.labelDy },
+            cs,
+          )
+          const lay = svgNameLabelAttrs(element.labelPlacement)
+          nodes.push(
+            <text
+              key={`${element.id}-lbl`}
+              {...nameLabelProps}
+              dominantBaseline={lay.dominantBaseline}
+              textAnchor={lay.textAnchor}
+              x={p.x}
+              y={p.y}
+              onClick={handleAxisLineClick}
+            >
+              {element.label}
+            </text>,
+          )
+        }
+      } else {
+        const y1 = Math.min(element.min, element.max)
+        const y2 = Math.max(element.min, element.max)
+        const span = Math.abs(y2 - y1)
+        const pStart = tikzToSvg({ x: ox, y: y1 }, cs)
+        const pEnd = tikzToSvg({ x: ox, y: y2 }, cs)
+        if (span > axesEpsilon) {
+          nodes.push(
+            <line
+              key={`${element.id}-axis`}
+              {...axisStrokeProps}
+              x1={pStart.x}
+              x2={pEnd.x}
+              y1={pStart.y}
+              y2={pEnd.y}
+              onClick={handleAxisLineClick}
+            />,
+          )
+        }
+        if (element.showTicks && span > axesEpsilon) {
+          const stepped = element.tickStep > 0 ? tickValuesInRange(y1, y2, element.tickStep) : []
+          const ticks = mergeAxisTickMarks(stepped, element.manualTicks, y1, y2)
+          for (let i = 0; i < ticks.length; i++) {
+            const tick = ticks[i]
+            const ty = tick.value
+            const left = tikzToSvg({ x: ox - δ, y: ty }, cs)
+            const right = tikzToSvg({ x: ox + δ, y: ty }, cs)
+            nodes.push(
+              <line
+                key={`${element.id}-yt-${i}-${ty}`}
+                {...tickStrokeProps}
+                x1={left.x}
+                x2={right.x}
+                y1={left.y}
+                y2={right.y}
+                onClick={handleAxisLineClick}
+              />,
+            )
+            if (element.showTickLabels) {
+              const labelPos = tikzToSvg({ x: ox - δ - axesTickLabelOffset * 0.45, y: ty }, cs)
+              nodes.push(
+                <text
+                  key={`${element.id}-ytl-${i}-${ty}`}
+                  {...tickLabelProps}
+                  dominantBaseline="middle"
+                  textAnchor="end"
+                  x={labelPos.x}
+                  y={labelPos.y}
+                  onClick={handleAxisLineClick}
+                >
+                  {tickMarkDisplayLabel(tick)}
+                </text>,
+              )
+            }
+          }
+        }
+        if (element.label.trim() && span > axesEpsilon) {
+          const p = tikzToSvg(
+            { x: ox + element.labelDx, y: y2 + axesNameLabelOffset + element.labelDy },
+            cs,
+          )
+          const lay = svgNameLabelAttrs(element.labelPlacement)
+          nodes.push(
+            <text
+              key={`${element.id}-lbl`}
+              {...nameLabelProps}
+              dominantBaseline={lay.dominantBaseline}
+              textAnchor={lay.textAnchor}
+              x={p.x}
+              y={p.y}
+              onClick={handleAxisLineClick}
+            >
+              {element.label}
+            </text>,
+          )
+        }
+      }
+
+      return (
+        <g key={element.id}>
+          {nodes}
+        </g>
+      )
+    }
+
+    if (element.type === 'axes') {
+      const showX = element.canvasVisible !== false && element.canvasVisibleX !== false
+      const showY = element.canvasVisible !== false && element.canvasVisibleY !== false
+      if (!showX && !showY) {
+        return null
+      }
+      const { x, y } = getAxesSegments(element.origin, element.xMin, element.xMax, element.yMin, element.yMax)
+      const ox = element.origin.x
+      const oy = element.origin.y
+      const δ = axesTickHalfLength
+      const axesShapeClass = selected
+        ? 'shape selected'
+        : isIntersectionPick
+          ? 'shape intersection-pick'
+          : 'shape'
+      const axesStrokeW = pickBold ? 5 : element.style.lineWidth * 2
+      const axisStrokeProps = {
+        className: axesShapeClass,
+        opacity: element.style.opacity,
+        stroke: element.style.drawColor,
+        strokeLinecap: svgLineCap[element.style.lineCap],
+        strokeLinejoin: element.style.lineJoin,
+        strokeWidth: axesStrokeW,
         strokeDasharray: lineDash(element.style),
         markerEnd: markerEnd(element.style),
       }
 
       const tickStrokeProps = {
-        className: selected ? 'shape selected' : 'shape',
+        className: axesShapeClass,
         opacity: element.style.opacity,
         stroke: element.style.drawColor,
         strokeLinecap: svgLineCap[element.style.lineCap],
         strokeLinejoin: element.style.lineJoin,
-        strokeWidth: element.style.lineWidth * 2,
+        strokeWidth: axesStrokeW,
         strokeDasharray: lineDash(element.style),
       }
 
@@ -481,7 +695,7 @@ export function DrawingCanvas({
 
       const nodes: ReactNode[] = []
 
-      if (xSpan > axesEpsilon) {
+      if (showX && xSpan > axesEpsilon) {
         nodes.push(
           <line
             key={`${element.id}-x-axis`}
@@ -495,7 +709,7 @@ export function DrawingCanvas({
         )
       }
 
-      if (ySpan > axesEpsilon) {
+      if (showY && ySpan > axesEpsilon) {
         nodes.push(
           <line
             key={`${element.id}-y-axis`}
@@ -509,7 +723,7 @@ export function DrawingCanvas({
         )
       }
 
-      if (element.showTicks && xSpan > axesEpsilon) {
+      if (showX && element.showTicks && xSpan > axesEpsilon) {
         const xMin = Math.min(x.start.x, x.end.x)
         const xMax = Math.max(x.start.x, x.end.x)
         const steppedX =
@@ -549,7 +763,7 @@ export function DrawingCanvas({
         }
       }
 
-      if (element.showTicks && ySpan > axesEpsilon) {
+      if (showY && element.showTicks && ySpan > axesEpsilon) {
         const yMin = Math.min(y.start.y, y.end.y)
         const yMax = Math.max(y.start.y, y.end.y)
         const steppedY =
@@ -590,7 +804,7 @@ export function DrawingCanvas({
         }
       }
 
-      if (element.labelX.trim() && xSpan > axesEpsilon) {
+      if (showX && element.labelX.trim() && xSpan > axesEpsilon) {
         const p = tikzToSvg(
           {
             x: x.end.x + axesNameLabelOffset + element.labelXDx,
@@ -614,7 +828,7 @@ export function DrawingCanvas({
         )
       }
 
-      if (element.labelY.trim() && ySpan > axesEpsilon) {
+      if (showY && element.labelY.trim() && ySpan > axesEpsilon) {
         const p = tikzToSvg(
           {
             x: ox + element.labelYDx,
@@ -645,16 +859,21 @@ export function DrawingCanvas({
       )
     }
 
-    if (element.type === 'point') {
+    if (element.type === 'point' || element.type === 'intersectionPoint') {
       const center = tikzToSvg(element.center, cs)
+      const isIx = element.type === 'intersectionPoint'
+      const dotClass = isIx
+        ? `intersection-point-marker${selected ? ' selected' : ''}`
+        : undefined
       return (
         <g key={element.id} onClick={handleElementClick} style={{ cursor: 'pointer' }}>
           <circle
+            className={dotClass}
             cx={center.x}
             cy={center.y}
             fill={element.style.drawColor}
             opacity={element.style.opacity}
-            r={4}
+            r={isIx && selected ? 5 : 4}
             stroke={element.style.drawColor}
             strokeWidth={element.style.lineWidth * 2}
           />

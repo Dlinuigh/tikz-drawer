@@ -207,12 +207,50 @@ fn rasterize_pdf_first_page(pdf_path: String) -> Result<String, String> {
   )
 }
 
+struct ViewMenuBarItems {
+    x_item: tauri::menu::MenuItem<tauri::Wry>,
+    y_item: tauri::menu::MenuItem<tauri::Wry>,
+    properties_item: tauri::menu::MenuItem<tauri::Wry>,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+fn update_axis_canvas_menu_items(
+    state: tauri::State<'_, ViewMenuBarItems>,
+    x_label: String,
+    y_label: String,
+    x_enabled: bool,
+    y_enabled: bool,
+    properties_label: String,
+) -> Result<(), String> {
+    state
+        .x_item
+        .set_text(x_label)
+        .map_err(|e| e.to_string())?;
+    state
+        .y_item
+        .set_text(y_label)
+        .map_err(|e| e.to_string())?;
+    state
+        .x_item
+        .set_enabled(x_enabled)
+        .map_err(|e| e.to_string())?;
+    state
+        .y_item
+        .set_enabled(y_enabled)
+        .map_err(|e| e.to_string())?;
+    state
+        .properties_item
+        .set_text(properties_label)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
     .setup(|app| {
       use tauri::menu::{MenuBuilder, SubmenuBuilder, MenuItemBuilder};
-      use tauri::Emitter;
+      use tauri::{Emitter, Manager};
 
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -248,6 +286,19 @@ pub fn run() {
         .item(&MenuItemBuilder::with_id("paste", "Paste").accelerator("CmdOrCtrl+V").build(app)?)
         .build()?;
 
+      let toggle_axes_x_canvas =
+        MenuItemBuilder::with_id("toggle_axes_x_canvas", "X 轴").build(app)?;
+      let toggle_axes_y_canvas =
+        MenuItemBuilder::with_id("toggle_axes_y_canvas", "Y 轴").build(app)?;
+      let toggle_properties_panel =
+        MenuItemBuilder::with_id("toggle_properties", "展开属性栏").build(app)?;
+
+      app.manage(ViewMenuBarItems {
+        x_item: toggle_axes_x_canvas.clone(),
+        y_item: toggle_axes_y_canvas.clone(),
+        properties_item: toggle_properties_panel.clone(),
+      });
+
       let view_menu = SubmenuBuilder::new(app, "View")
         .item(&MenuItemBuilder::with_id("center_on_selection", "Center on Selection").build(app)?)
         .item(&MenuItemBuilder::with_id("reset_view", "Reset View").build(app)?)
@@ -260,7 +311,10 @@ pub fn run() {
         .item(&MenuItemBuilder::with_id("grid_toggle_export", "Toggle Grid in Export").build(app)?)
         .item(&MenuItemBuilder::with_id("grid_settings", "Grid Settings…").build(app)?)
         .separator()
-        .item(&MenuItemBuilder::with_id("toggle_properties", "Toggle Properties Panel").build(app)?)
+        .item(&toggle_axes_x_canvas)
+        .item(&toggle_axes_y_canvas)
+        .separator()
+        .item(&toggle_properties_panel)
         .item(&MenuItemBuilder::with_id("view_tikz", "Show TikZ Preview").build(app)?)
         .build()?;
 
@@ -286,27 +340,41 @@ pub fn run() {
 
       app.set_menu(menu)?;
 
-      // Handle menu events and forward to frontend
+      // Forward menu actions to the webview IPC layer (main window label must match tauri.conf).
       let handle = app.handle().clone();
+      let forward = move |channel: &'static str| {
+        match handle.get_webview_window("main") {
+          Some(w) => {
+            let _ = w.emit(channel, ());
+          }
+          None => {
+            let _ = handle.emit(channel, ());
+          }
+        }
+      };
+
       app.on_menu_event(move |_app, event| {
-        let id = event.id().0.as_str();
-        match id {
-          "new_canvas" => { let _ = handle.emit("menu-new-canvas", ()); }
-          "save_project" => { let _ = handle.emit("menu-save-project", ()); }
-          "export_tikz" => { let _ = handle.emit("menu-export-tikz", ()); }
-          "export_pdf" => { let _ = handle.emit("menu-export-pdf", ()); }
-          "center_on_selection" => { let _ = handle.emit("menu-center-on-selection", ()); }
-          "reset_view" => { let _ = handle.emit("menu-reset-view", ()); }
-          "grid_toggle_canvas" => { let _ = handle.emit("menu-grid-toggle-canvas", ()); }
-          "grid_toggle_export" => { let _ = handle.emit("menu-grid-toggle-export", ()); }
-          "grid_settings" => { let _ = handle.emit("menu-grid-settings", ()); }
-          "compile" => { let _ = handle.emit("menu-compile", ()); }
-          "copy_code" => { let _ = handle.emit("menu-copy-code", ()); }
-          "view_pdf" => { let _ = handle.emit("menu-open-pdf", ()); }
-          "toggle_properties" => { let _ = handle.emit("menu-toggle-properties", ()); }
-          "view_tikz" => { let _ = handle.emit("menu-toggle-tikz", ()); }
-          "settings" => { let _ = handle.emit("menu-settings", ()); }
-          _ => {}
+        match event.id.as_ref() {
+          "new_canvas" => forward("menu-new-canvas"),
+          "save_project" => forward("menu-save-project"),
+          "export_tikz" => forward("menu-export-tikz"),
+          "export_pdf" => forward("menu-export-pdf"),
+          "center_on_selection" => forward("menu-center-on-selection"),
+          "reset_view" => forward("menu-reset-view"),
+          "grid_toggle_canvas" => forward("menu-grid-toggle-canvas"),
+          "grid_toggle_export" => forward("menu-grid-toggle-export"),
+          "grid_settings" => forward("menu-grid-settings"),
+          "toggle_axes_x_canvas" => forward("menu-toggle-axes-x-canvas"),
+          "toggle_axes_y_canvas" => forward("menu-toggle-axes-y-canvas"),
+          "compile" => forward("menu-compile"),
+          "copy_code" => forward("menu-copy-code"),
+          "view_pdf" => forward("menu-open-pdf"),
+          "toggle_properties" => forward("menu-toggle-properties"),
+          "view_tikz" => forward("menu-toggle-tikz"),
+          "settings" => forward("menu-settings"),
+          other => {
+            log::warn!("unhandled menu id: {other}");
+          }
         }
       });
 
@@ -319,6 +387,7 @@ pub fn run() {
       copy_path,
       read_file_binary,
       rasterize_pdf_first_page,
+      update_axis_canvas_menu_items,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

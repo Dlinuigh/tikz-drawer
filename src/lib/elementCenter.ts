@@ -20,6 +20,16 @@ export const tikzCenterOfElement = (e: DrawingElement): Point | null => {
     }
     case 'axes':
       return { ...e.origin }
+    case 'axisLine': {
+      const ox = e.origin.x
+      const oy = e.origin.y
+      const lo = Math.min(e.min, e.max)
+      const hi = Math.max(e.min, e.max)
+      return e.orientation === 'x' ? { x: (lo + hi) / 2, y: oy } : { x: ox, y: (lo + hi) / 2 }
+    }
+    case 'point':
+    case 'intersectionPoint':
+      return { ...e.center }
     default:
       return null
   }

@@ -4,12 +4,12 @@ TikZ Drawer 是一个 Tauri 桌面绘图软件，用按钮和表单绘制 TikZ �
 
 ## 功能
 
-- 通过两点作图绘制直线。
-- 通过起点、终点和给定角度绘制圆弧。
-- 通过两点或多点绘制矩形、圆、椭圆和多段线。
-- 通过界面控件修改箭头、线型、颜色和线宽。
-- 实时生成 TikZ 代码。
-- 调用本机 `pdflatex` 编译 TikZ，并显示编译日志和 PDF 路径。
+- **图形**：直线（两点 / 点斜）、圆弧、矩形、圆、椭圆、多段线、点；**坐标轴**（`axisLine` 单轴或旧版合并 `axes`，对话框可选只建 x/y）；**交点工具**生成 `intersectionPoint` 图元。
+- **画布**：平移视图（Alt / 中键拖拽）、网格与导出网格可配置；坐标轴在画布上的 X/Y 显隐由 **macOS View 菜单** 分别控制（文案随状态切换）。
+- **界面**：右侧属性栏默认收起（☰ / 菜单「展开属性栏」）；紧凑工具栏、浮动样式面板、源码 / 画布 tab、编译与 PNG/PDF 导出。
+- **样式**：箭头、线型、颜色（预设）、线宽、端点/连接、不透明度等。
+- **输出**：实时 TikZ；本机 **`pdflatex`** 编译、日志与 PDF；可选栅格导出至 PDF。
+- **菜单**：macOS 原生菜单栏与快捷键；菜单事件经 Tauri 转发至前端（主窗口 `main`）。
 
 ## 开发运行
 
@@ -34,7 +34,7 @@ cd src-tauri && cargo check
 
 ## 文档
 
-- 详细说明：[`docs/README.md`](docs/README.md)
+- 文档索引与交接：[`docs/README.md`](docs/README.md)、[`docs/plan_handoff_next_version.md`](docs/plan_handoff_next_version.md)
 - 实现计划：[`docs/PLAN.md`](docs/PLAN.md)
 - 路线图：[`docs/ROADMAP.md`](docs/ROADMAP.md)
 - Canvas 路线图归档：[`docs/CANVAS_ROADMAP.md`](docs/CANVAS_ROADMAP.md)
