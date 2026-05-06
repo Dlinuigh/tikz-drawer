@@ -4,7 +4,13 @@ All notable changes to TikZ Drawer will be documented in this file.
 
 ## Unreleased
 
-### 交接摘要（下一版本需求前）
+暂无已记录的变更。
+
+## 0.1.0 - 2026-05-06
+
+首个面向 macOS 的 GitHub Release 构建（需本机安装 LaTeX / `pdflatex` 等，详见 README）。
+
+### 维护者摘要
 
 - **坐标轴**：`axisLine` 单轴 + 旧 `axes` 兼容；画布 X/Y 显隐仅 **View** 菜单两项，文案随状态（隐藏/显示）；合并轴支持 `canvasVisibleX`/`canvasVisibleY`；TikZ 仍输出完整轴。逻辑见 `src/lib/axisCanvas.ts`。
 - **菜单**：主窗口 `label: main`；`invoke('update_axis_canvas_menu_items')` 扁平参数同步轴项与属性栏标题；`useLayoutEffect([elements, propertiesOpen])`。属性栏默认收起，菜单占位「展开属性栏」。
@@ -75,7 +81,8 @@ All notable changes to TikZ Drawer will be documented in this file.
 - Tauri capabilities: configure `opener:allow-open-path` with scope `{ "path": "$TEMP/tikz-drawer/**" }` so LaTeX PDFs under the temp workspace can be opened (string-only permission is not enough).
 - Updated `docs/PLAN.md` for compile workspace, preview/export commands, and prior interaction notes (line modes, axes, fraction input).
 - Updated README documentation links to point to the docs roadmap and Canvas roadmap archive.
-- **文档（下一版本前）**：新增 [`docs/README.md`](docs/README.md)、[`docs/plan_handoff_next_version.md`](docs/plan_handoff_next_version.md)；根 [`README.md`](README.md) 功能列表与文档链接对齐现状；[`CHANGELOG.md`](CHANGELOG.md) `Unreleased` 增加交接摘要；[`docs/PLAN.md`](docs/PLAN.md) 增加交接索引。
+- **文档**：新增 [`docs/README.md`](docs/README.md)、[`docs/plan_handoff_next_version.md`](docs/plan_handoff_next_version.md)；根 [`README.md`](README.md) 功能列表与文档链接对齐；[`docs/PLAN.md`](docs/PLAN.md) 增加交接索引。
+- **发行**：`package.json` 版本 **0.1.0**；`identifier` 设为 `io.github.dlinuigh.tikz-drawer`（便于与 `com.tauri.dev` 区分）。
 
 ## 0.0.0 - 2026-04-29
 

@@ -1,6 +1,6 @@
 # 下一版本需求前 · 交接说明
 
-> 便于新开需求时快速对齐现状；细则仍以代码与 [`CHANGELOG.md`](../CHANGELOG.md) `Unreleased` 为准。
+> **v0.1.0** 已打开发行说明（见根目录 [`CHANGELOG.md`](../CHANGELOG.md)）；便于新开需求时对齐现状。
 
 ## 1. 近期行为摘要
 
@@ -53,3 +53,9 @@
 - 持久化工程 / 撤销重做与菜单 id 对齐。
 - `axes` 与双 `axisLine` 并存时的 UX。
 - 更多图元参与求交或交点编辑体验。
+
+## 4. Release v0.1.0（2026-05-06）
+
+- **本地构建**：`npm run tauri build` 已通过；产物：`src-tauri/target/release/bundle/macos/TikZ Drawer.app`、`src-tauri/target/release/bundle/dmg/TikZ Drawer_0.1.0_aarch64.dmg`（Apple Silicon）。
+- **Git**：提交后打标签 **`v0.1.0`** 并 `git push origin <branch> --tags`；若本机未安装 `gh`，在 GitHub 网页 **Releases → Draft a release** 选择该 tag，上传上述 DMG 作为附件。
+- **Tauri 对齐**：`tauri` crate **2.11.1** + `tauri-build` **2.6.1**；前端 `@tauri-apps/api` **^2.11.0**、`@tauri-apps/cli` **^2.11.1**。

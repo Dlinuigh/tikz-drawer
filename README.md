@@ -26,6 +26,36 @@ npm run lint
 cd src-tauri && cargo check
 ```
 
+## GitHub Release（macOS）
+
+本地打包 DMG / `.app`：
+
+```sh
+npm install
+npm run tauri build
+```
+
+产物通常在 `src-tauri/target/release/bundle/dmg/`（`.dmg`）与 `src-tauri/target/release/bundle/macos/`（`.app`）。
+
+创建标签并推送后，在 GitHub 网页 **Releases → Draft a new release**：
+
+1. **Choose a tag**：新建 `v0.1.0`（或与 `package.json` / `tauri.conf.json` 中版本一致）。
+2. Target 选默认分支；标题例如 `v0.1.0`。
+3. 说明可从 [`CHANGELOG.md`](CHANGELOG.md) 中 **0.1.0** 一节摘录。
+4. 将构建好的 **`.dmg`** 作为附件上传（可选同时上传 `.app.zip`）。
+
+命令行示例（需已 [安装 GitHub CLI](https://cli.github.com/) 且已登录）：
+
+```sh
+git add -A && git commit -m "chore: release v0.1.0"
+git tag -a v0.1.0 -m "TikZ Drawer v0.1.0"
+git push origin HEAD
+git push origin v0.1.0
+gh release create v0.1.0 --title "TikZ Drawer v0.1.0" --notes "首个 macOS 发行构建；变更见仓库内 CHANGELOG.md § 0.1.0。" ./src-tauri/target/release/bundle/dmg/*.dmg
+```
+
+（若不用 `gh`，只执行 `git push` 与 `git push origin v0.1.0`，再在网页上传附件即可。）
+
 ## 依赖
 
 - Node.js 和 npm
