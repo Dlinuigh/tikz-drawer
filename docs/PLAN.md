@@ -77,3 +77,16 @@ flowchart LR
 - **求交点功能**：新增「交点」工具，依次点击两个图元后计算交点（支持线段-线段、线段-圆、圆-圆），弹出命名对话框创建命名点元素。
 - **点元素**：新增 `PointElement` 类型（`type: 'point'`），带 `center` 和 `label` 字段；画布渲染为小圆点+文本标签；TikZ 导出为 `\\draw ... node[circle, fill, inner sep=1.5pt, label={...}]{};`。
 - **圆弧 TikZ 对应**：新增「圆心+半径+角度」模式，对话框输入半径 r、起始角 α、终止角 β；TikZ 导出添加参数注释；属性面板中展示参数说明与 TikZ 语法对照。
+
+## 2026-05-06 会话增量（后续）
+
+- **布局重构**：画布/源码双 tab 居中切换（`.center-tab` 分段开关样式），替代旧版底部抽屉预览。
+- **工具栏浮动**：`<Toolbar>` 从 `.workspace` 移入 `.canvas-area`，`position: absolute; top: 50%; left: 6px; z-index: 100` 浮在画布左侧居中。
+- **源码编辑器**：替换 Monaco Editor 为原生 `<textarea>`（深色背景、等宽字体、自动换行），零额外依赖。
+- **PDF 预览**：渲染流程 `compile_tikz` → `rasterize_pdf_first_page` → `read_file_binary` 读取 PNG 二进制 → `Blob` + `URL.createObjectURL` → `<img>` 显示，无 iframe/工具栏开销。
+- **Tab 栏操作按钮**：源码页左 `[复制][编译]` + 右 `[下载▾]`（PNG 默认/PDF 选单）；画布页右 `[☰]` 切换属性面板。左右操作区 `min-width: 100px` 防布局抖动。
+- **菜单栏完整化**：File/Edit/View/Window/Help 标准菜单；View 含 `Toggle Properties Panel`、`Show TikZ Preview` 等。
+- **右键菜单抑制**：全局 `contextmenu` → `e.preventDefault()`。
+- **自动编译**：点击「源码」tab 时同步 `tikzCode` 到编辑器后立即调用 `compileManualCode(tikzCode)`。
+- **下载按钮**：`download-btn-group` 分体按钮（主按钮 + ▾ 箭头），箭头展开绝对定位菜单；关闭菜单通过延迟注册 document click 事件。
+- **Rust 新增**：`read_file_binary` 命令读取任意文件二进制（用于加载 PNG 绕过 asset 协议作用域限制）。
