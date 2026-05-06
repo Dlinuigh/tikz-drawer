@@ -354,6 +354,7 @@ type PropertiesPanelProps = {
   selectedElement: DrawingElement | null
   onUpdate: (element: DrawingElement) => void
   onDelete: (id: string) => void
+  onClose: () => void
 }
 
 const updateStyle = (element: DrawingElement, style: Partial<DrawingStyle>): DrawingElement => ({
@@ -374,11 +375,16 @@ const elementTypeLabel: Record<DrawingElement['type'], string> = {
   axes: '坐标轴',
 }
 
-export function PropertiesPanel({ selectedElement, onUpdate, onDelete }: PropertiesPanelProps) {
+export function PropertiesPanel({ selectedElement, onUpdate, onDelete, onClose }: PropertiesPanelProps) {
   if (!selectedElement) {
     return (
       <aside className="properties-panel">
-        <h2>属性</h2>
+        <div className="properties-header">
+          <h2>属性</h2>
+          <button className="compact" type="button" onClick={onClose}>
+            ✕
+          </button>
+        </div>
         <p className="hint">用选择工具点击图形后，可以在这里修改箭头、线型、颜色和圆弧角度。</p>
       </aside>
     )
@@ -386,7 +392,12 @@ export function PropertiesPanel({ selectedElement, onUpdate, onDelete }: Propert
 
   return (
     <aside className="properties-panel">
-      <h2>属性</h2>
+      <div className="properties-header">
+        <h2>属性</h2>
+        <button className="compact" type="button" onClick={onClose}>
+          ✕
+        </button>
+      </div>
       <p className="element-id">{elementTypeLabel[selectedElement.type]} · {selectedElement.id}</p>
 
       <label>

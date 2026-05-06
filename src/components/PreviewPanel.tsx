@@ -14,9 +14,10 @@ type PreviewPanelProps = {
   compileResult: CompileResult | null
   isCompiling: boolean
   onCompile: () => void
+  onClose: () => void
 }
 
-export function PreviewPanel({ tikzCode, compileResult, isCompiling, onCompile }: PreviewPanelProps) {
+export function PreviewPanel({ tikzCode, compileResult, isCompiling, onCompile, onClose }: PreviewPanelProps) {
   const [copyHint, setCopyHint] = useState<string | null>(null)
   const [statusHint, setStatusHint] = useState<string | null>(null)
 
@@ -112,13 +113,16 @@ export function PreviewPanel({ tikzCode, compileResult, isCompiling, onCompile }
             复制代码
           </button>
           <button disabled={!canUsePdf} type="button" onClick={openSystemPdf}>
-            系统打开 PDF
+            打开 PDF
           </button>
           <button disabled={!canUsePdf} type="button" onClick={exportPdf}>
             导出 PDF
           </button>
           <button disabled={!canUsePdf} type="button" onClick={exportPng}>
             导出 PNG
+          </button>
+          <button className="compact" type="button" onClick={onClose}>
+            ✕
           </button>
         </div>
       </div>

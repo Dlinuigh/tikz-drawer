@@ -206,6 +206,9 @@ fn rasterize_pdf_first_page(pdf_path: String) -> Result<String, String> {
 pub fn run() {
   tauri::Builder::default()
     .setup(|app| {
+      use tauri::menu::{MenuBuilder, SubmenuBuilder, MenuItemBuilder};
+      use tauri::Emitter;
+
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()
@@ -213,6 +216,45 @@ pub fn run() {
             .build(),
         )?;
       }
+
+      // Build macOS native menu bar
+      let file_menu = SubmenuBuilder::new(app, "File")
+        .item(&MenuItemBuilder::with_id("new_canvas", "New Canvas").accelerator("CmdOrCtrl+N").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("export_pdf", "Export PDF...").accelerator("CmdOrCtrl+Shift+E").build(app)?)
+        .item(&MenuItemBuilder::with_id("export_png", "Export PNG...").build(app)?)
+        .separator()
+        .quit()
+        .build()?;
+
+      let compile_menu = SubmenuBuilder::new(app, "Compile")
+        .item(&MenuItemBuilder::with_id("compile", "Compile").accelerator("CmdOrCtrl+R").build(app)?)
+        .item(&MenuItemBuilder::with_id("copy_code", "Copy TikZ Code").accelerator("CmdOrCtrl+Shift+C").build(app)?)
+        .item(&MenuItemBuilder::with_id("open_pdf", "Open PDF").build(app)?)
+        .build()?;
+
+      let menu = MenuBuilder::new(app)
+        .item(&file_menu)
+        .item(&compile_menu)
+        .build()?;
+
+      app.set_menu(menu)?;
+
+      // Handle menu events and forward to frontend
+      let handle = app.handle().clone();
+      app.on_menu_event(move |_app, event| {
+        let id = event.id().0.as_str();
+        match id {
+          "new_canvas" => { let _ = handle.emit("menu-new-canvas", ()); }
+          "export_pdf" => { let _ = handle.emit("menu-export-pdf", ()); }
+          "export_png" => { let _ = handle.emit("menu-export-png", ()); }
+          "compile" => { let _ = handle.emit("menu-compile", ()); }
+          "copy_code" => { let _ = handle.emit("menu-copy-code", ()); }
+          "open_pdf" => { let _ = handle.emit("menu-open-pdf", ()); }
+          _ => {}
+        }
+      });
+
       Ok(())
     })
     .plugin(tauri_plugin_dialog::init())

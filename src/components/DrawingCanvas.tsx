@@ -10,7 +10,7 @@ import {
   tickMarkDisplayLabel,
   tickValuesInRange,
 } from '../lib/axes'
-import type { DraftElement, DrawingElement, DrawingStyle, LineSubtool, Point, Tool } from '../types/drawing'
+import type { DraftElement, DrawingElement, DrawingStyle, GridConfig, LineSubtool, Point, Tool } from '../types/drawing'
 type DrawingCanvasProps = {
   activeTool: Tool
   lineSubtool: LineSubtool
@@ -19,6 +19,7 @@ type DrawingCanvasProps = {
   selectedId: string | null
   currentStyle: DrawingStyle
   arcAngle: number
+  gridConfig: GridConfig
   onCreate: (element: DrawingElement) => void
   onDraftChange: (draft: DraftElement | null) => void
   onSelect: (id: string | null) => void
@@ -97,8 +98,12 @@ const svgLineCap: Record<DrawingStyle['lineCap'], 'butt' | 'round' | 'square'> =
   rect: 'square',
 }
 
-const gridLines = () => {
-  const { width, height, gridStep, pixelsPerUnit, origin } = defaultCoordinateSystem
+const gridLines = (gridConfig: GridConfig) => {
+  const { width, height, pixelsPerUnit, origin } = defaultCoordinateSystem
+  const { gridStep } = gridConfig
+  if (!gridConfig.showGrid) {
+    return []
+  }
   const minX = Math.ceil(-origin.x / pixelsPerUnit / gridStep) * gridStep
   const maxX = Math.floor((width - origin.x) / pixelsPerUnit / gridStep) * gridStep
   const minY = Math.ceil((origin.y - height) / pixelsPerUnit / gridStep) * gridStep
@@ -120,15 +125,14 @@ const gridLines = () => {
   return lines
 }
 
-const toolHint: Record<Tool, string> = {
-  select: '选择：点击图形修改属性',
-  line: '直线：点击两点作图',
-  arc: '圆弧：点击起点和终点',
-  rectangle: '矩形：点击两个对角点',
-  circle: '圆：点击圆心和半径点',
-  ellipse: '椭圆：点击中心和半径点',
-  polyline: '多段线：连续点击添加点',
-  axes: '坐标轴：点击原点，再在对话框中输入 x、y 的上下限',
+const gridLineDash = (gridConfig: GridConfig): string | undefined => {
+  if (gridConfig.gridLineStyle === 'dashed') {
+    return '8 6'
+  }
+  if (gridConfig.gridLineStyle === 'dotted') {
+    return '2 4'
+  }
+  return undefined
 }
 
 const axesEpsilon = 1e-9
@@ -141,17 +145,13 @@ export function DrawingCanvas({
   selectedId,
   currentStyle,
   arcAngle,
+  gridConfig,
   onCreate,
   onDraftChange,
   onSelect,
   onAxesOriginPick,
   onLineSlopeAnchorPick,
 }: DrawingCanvasProps) {
-  const canvasHint =
-    activeTool === 'line' && lineSubtool === 'pointSlope'
-      ? '直线（点与斜率）：点击直线经过的点，再在对话框中输入斜率与两端 x 坐标'
-      : toolHint[activeTool]
-
   const handleCanvasClick = (event: MouseEvent<SVGSVGElement>) => {
     const point = snapTikzPoint(svgToTikz(getSvgPoint(event)))
 
@@ -578,17 +578,13 @@ export function DrawingCanvas({
 
   return (
     <div className="canvas-card">
-      <div className="canvas-header">
-        <div>
-          <h2>画布</h2>
-          <p>{canvasHint}</p>
-        </div>
-        {draft?.type === 'polyline' && (
+      {draft?.type === 'polyline' && (
+        <div className="canvas-header">
           <button type="button" onClick={finishPolyline} disabled={(draft.points?.length ?? 0) < 2}>
             完成多段线
           </button>
-        )}
-      </div>
+        </div>
+      )}
       <svg
         className="drawing-canvas"
         height={defaultCoordinateSystem.height}
@@ -606,8 +602,18 @@ export function DrawingCanvas({
           </marker>
         </defs>
         <rect className="canvas-background" height={defaultCoordinateSystem.height} width={defaultCoordinateSystem.width} />
-        {gridLines().map((line) => (
-          <line key={line.id} className="grid-line" x1={line.x1} x2={line.x2} y1={line.y1} y2={line.y2} />
+        {gridLines(gridConfig).map((line) => (
+          <line
+            key={line.id}
+            className="grid-line"
+            stroke={gridConfig.gridColor}
+            strokeWidth={gridConfig.gridLineWidth}
+            strokeDasharray={gridLineDash(gridConfig)}
+            x1={line.x1}
+            x2={line.x2}
+            y1={line.y1}
+            y2={line.y2}
+          />
         ))}
         <line className="axis" x1="0" x2={defaultCoordinateSystem.width} y1={origin.y} y2={origin.y} />
         <line className="axis" x1={origin.x} x2={origin.x} y1="0" y2={defaultCoordinateSystem.height} />

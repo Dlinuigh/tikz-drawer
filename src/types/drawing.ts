@@ -3,6 +3,22 @@ export type Point = {
   y: number
 }
 
+export type GridConfig = {
+  showGrid: boolean
+  gridStep: number
+  gridColor: string
+  gridLineStyle: 'solid' | 'dashed' | 'dotted'
+  gridLineWidth: number
+}
+
+export const defaultGridConfig: GridConfig = {
+  showGrid: true,
+  gridStep: 1,
+  gridColor: '#e5e7eb',
+  gridLineStyle: 'solid',
+  gridLineWidth: 1,
+}
+
 export type LineSubtool = 'twoPoints' | 'pointSlope'
 
 export type Tool =

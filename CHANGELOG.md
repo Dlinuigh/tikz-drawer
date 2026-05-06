@@ -6,6 +6,13 @@ All notable changes to TikZ Drawer will be documented in this file.
 
 ### Added
 
+- **VSCode-like fixed window layout**: removed the large title header; app now fills the window with no page scrolling; compact left toolbar, flexible canvas area, collapsible right properties panel, and expandable bottom preview drawer.
+- **Status bar** at the bottom of the canvas area showing compile status, grid info, and a quick compile button.
+- **macOS native menu bar** (File: New Canvas, Export PDF/PNG, Quit; Compile: Compile, Copy TikZ Code, Open PDF) with keyboard shortcuts.
+- **Grid customization**: dynamic grid rendering with configurable show/hide, step size, color, line style (solid/dashed/dotted), and line width (`GridConfig` type in drawing types).
+- **Expanded color palette**: up to 16 preset colors with `+` button to add new colors, edit mode to adjust/delete presets, and localStorage persistence.
+- **Floating style panel**: style controls (arrows, line style, color, width, cap, join, opacity) now appear as a floating popup triggered from the toolbar.
+- **Compact toolbar redesign**: drawing tool buttons as a narrow strip (~64px); line subtools and arc angle shown inline; clear button at bottom.
 - After compile: **embedded PDF preview** (iframe + `convertFileSrc`), **open PDF in the default system viewer**, **copy TikZ** button, **export PDF / PNG** via save dialog (PNG uses local `pdftocairo`, ImageMagick, or Ghostscript when available).
 - LaTeX output goes to a **fixed temp workspace** cleared on each compile (`<temp>/tikz-drawer/workspace`).
 - Runtime deps: `@tauri-apps/plugin-dialog`, `@tauri-apps/plugin-opener`; Rust `tauri-plugin-dialog`, `tauri-plugin-opener`.
@@ -28,6 +35,15 @@ All notable changes to TikZ Drawer will be documented in this file.
 - Added TikZ output for rectangles, circles, ellipses, and polylines.
 
 ### Changed
+
+- **UI overhaul**: complete layout refactoring to VSCode-like fixed window; removed `.app-header`; `App.css` rewritten for `height: 100vh; overflow: hidden` layout.
+- Toolbar simplified to compact tool strip; style controls moved to `FloatingStylePanel` popup.
+- `ColorPicker` refactored with state-managed presets, add/edit/delete modes, localStorage persistence.
+- `DrawingCanvas` grid rendering uses dynamic `GridConfig` props instead of hardcoded styles.
+- `PropertiesPanel` and `PreviewPanel` now accept `onClose` prop for collapsible behavior.
+- `src/lib.rs` adds native menu bar setup with event forwarding to frontend.
+- `tauri.conf.json` window defaults increased to 1200x800 with 900x600 minimum.
+- `index.css` body/root set to `height: 100vh; overflow: hidden` to prevent page scrolling.
 
 - Tauri capabilities: configure `opener:allow-open-path` with scope `{ "path": "$TEMP/tikz-drawer/**" }` so LaTeX PDFs under the temp workspace can be opened (string-only permission is not enough).
 - Updated `docs/PLAN.md` for compile workspace, preview/export commands, and prior interaction notes (line modes, axes, fraction input).
