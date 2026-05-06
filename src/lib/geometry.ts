@@ -187,7 +187,156 @@ export const circleCircleIntersections = (
   return results
 }
 
-/* ──────────── 精确求交：椭圆、圆弧 ──────────── */
+/* ──────────── Newton-Raphson 曲线求交精化 ──────────── */
+
+/** 曲线描述：给定参数 t，返回点坐标和切线向量。 */
+type CurveFn = {
+  point: (t: number) => Point
+  derivative: (t: number) => Point
+}
+
+/** 圆的曲线函数（t ∈ [0, 2π)）。 */
+const circleCurve = (center: Point, radius: number): CurveFn => ({
+  point: (t: number) => ({ x: center.x + radius * Math.cos(t), y: center.y + radius * Math.sin(t) }),
+  derivative: (t: number) => ({ x: -radius * Math.sin(t), y: radius * Math.cos(t) }),
+})
+
+/** 椭圆的曲线函数（t ∈ [0, 2π)）。 */
+const ellipseCurve = (center: Point, xr: number, yr: number): CurveFn => ({
+  point: (t: number) => ({ x: center.x + xr * Math.cos(t), y: center.y + yr * Math.sin(t) }),
+  derivative: (t: number) => ({ x: -xr * Math.sin(t), y: yr * Math.cos(t) }),
+})
+
+/**
+ * 用 Newton-Raphson 法精化两个曲线的交点。
+ * @param c1 曲线 1
+ * @param c2 曲线 2
+ * @param guess1 曲线 1 的初始参数猜测
+ * @param guess2 曲线 2 的初始参数猜测
+ * @param maxIter 最大迭代次数
+ * @returns 精化后的交点坐标，或 null（未收敛）
+ */
+const refineIntersection = (
+  c1: CurveFn, c2: CurveFn,
+  guess1: number, guess2: number,
+  maxIter = 8,
+): Point | null => {
+  let t1 = guess1, t2 = guess2
+  for (let i = 0; i < maxIter; i++) {
+    const p1 = c1.point(t1), p2 = c2.point(t2)
+    const d1 = c1.derivative(t1), d2 = c2.derivative(t2)
+    const fx = p1.x - p2.x, fy = p1.y - p2.y
+
+    // J = [d1.x, -d2.x; d1.y, -d2.y]
+    const det = -d1.x * d2.y + d1.y * d2.x
+    if (Math.abs(det) < 1e-14) break
+
+    const dt1 = (-d2.y * fx + d2.x * fy) / det
+    const dt2 = (-d1.y * fx + d1.x * fy) / det
+
+    t1 -= dt1
+    t2 -= dt2
+
+    if (Math.abs(dt1) < 1e-10 && Math.abs(dt2) < 1e-10) break
+  }
+  return { x: c1.point(t1).x, y: c1.point(t1).y }
+}
+
+/**
+ * 椭圆-圆的精确交点（polyline 近似 → Newton-Raphson 精化）。
+ */
+const ellipseCircleIntersections = (
+  center: Point, xr: number, yr: number,
+  cx: Point, cr: number,
+): Point[] => {
+  const ec = ellipseCurve(center, xr, yr)
+  const cc = circleCurve(cx, cr)
+  const results: Point[] = []
+
+  // Step 1: polyline 近似找到候选
+  const steps = 60
+  const candidates: Array<[number, number]> = []
+  for (let i = 0; i < steps; i++) {
+    const t1 = (2 * Math.PI * i) / steps
+    const t2 = (2 * Math.PI * (i + 1)) / steps
+    const pA = ec.point(t1), pB = ec.point(t2)
+    // 检查椭圆上的线段是否与圆相交
+    const pts = lineCircleIntersections(pA, pB, cx, cr)
+    for (const pt of pts) {
+      // 找到椭圆上的参数
+      const angle = Math.atan2((pt.y - center.y) / yr, (pt.x - center.x) / xr)
+      const refined = refineIntersection(ec, cc, angle, Math.atan2(pt.y - cx.y, pt.x - cx.x))
+      if (refined && !results.some((p) => distance(p, refined) < 0.01)) results.push(refined)
+    }
+  }
+
+  return results
+}
+
+/**
+ * 椭圆-椭圆的精确交点（polyline 近似 → Newton-Raphson 精化）。
+ */
+const ellipseEllipseIntersections = (
+  c1: Point, xr1: number, yr1: number,
+  c2: Point, xr2: number, yr2: number,
+): Point[] => {
+  const e1 = ellipseCurve(c1, xr1, yr1)
+  const e2 = ellipseCurve(c2, xr2, yr2)
+  const results: Point[] = []
+
+  const steps = 60
+  const segs1 = ellipsePolyline(c1, xr1, yr1)
+  const segs2 = ellipsePolyline(c2, xr2, yr2)
+
+  for (let i = 0; i + 1 < segs1.length; i += 2) {
+    for (let j = 0; j + 1 < segs2.length; j += 2) {
+      const pt = segmentSegmentIntersection(segs1[i], segs1[i + 1], segs2[j], segs2[j + 1])
+      if (!pt) continue
+      const t1 = Math.atan2((pt.y - c1.y) / yr1, (pt.x - c1.x) / xr1)
+      const t2 = Math.atan2((pt.y - c2.y) / yr2, (pt.x - c2.x) / xr2)
+      const refined = refineIntersection(e1, e2, t1, t2)
+      if (refined && !results.some((p) => distance(p, refined) < 0.01)) results.push(refined)
+    }
+  }
+
+  return results
+}
+
+/**
+ * 椭圆-圆弧的精确交点（polyline 近似 → Newton-Raphson 精化 → 角度过滤）。
+ */
+const ellipseArcIntersections = (
+  c: Point, xr: number, yr: number,
+  arcStart: Point, arcEnd: Point, sweepAngle: number,
+): Point[] => {
+  const geo = getArcGeometry(arcStart, arcEnd, sweepAngle)
+  if (!geo) return []
+
+  const ec = ellipseCurve(c, xr, yr)
+  const ac = circleCurve(geo.center, geo.radius)
+  const results: Point[] = []
+
+  const steps = 60
+  const segs1 = ellipsePolyline(c, xr, yr)
+  const segs2 = arcPolyline(arcStart, arcEnd, sweepAngle)
+
+  for (let i = 0; i + 1 < segs1.length; i += 2) {
+    for (let j = 0; j + 1 < segs2.length; j += 2) {
+      const pt = segmentSegmentIntersection(segs1[i], segs1[i + 1], segs2[j], segs2[j + 1])
+      if (!pt) continue
+      const t1 = Math.atan2((pt.y - c.y) / yr, (pt.x - c.x) / xr)
+      const t2 = Math.atan2(pt.y - geo.center.y, pt.x - geo.center.x)
+      const refined = refineIntersection(ec, ac, t1, t2)
+      if (refined && isPointOnArc(refined, geo) && !results.some((p) => distance(p, refined) < 0.01)) {
+        results.push(refined)
+      }
+    }
+  }
+
+  return results
+}
+
+/* ──────────── 精确求交：椭圆、圆弧（二次方程） ──────────── */
 
 /** 椭圆（轴对齐）与线段的交点，精确二次方程求解。 */
 export const ellipseLineIntersections = (
@@ -400,21 +549,20 @@ export const computeIntersections = (a: DrawingElement, b: DrawingElement): Poin
     }
   }
 
-  // --- 7. Circle-ellipse ---
-  // Use ellipse polyline segments for circle-ellipse (practical approximation)
-  const ellipsesToSegs = (ellipses: IntersectInfo['ellipses']): Point[] => {
-    const segs: Point[] = []
-    for (const e of ellipses) segs.push(...ellipsePolyline(e.center, e.xRadius, e.yRadius))
-    return segs
-  }
-
+  // --- 7. Circle-ellipse (Newton-Raphson refined) ---
   if (infA.circles.length > 0 && infB.ellipses.length > 0) {
-    const segs = ellipsesToSegs(infB.ellipses)
-    for (const c of infA.circles) segsCircle(segs, c.center, c.radius)
+    for (const c of infA.circles) {
+      for (const e of infB.ellipses) {
+        for (const pt of ellipseCircleIntersections(e.center, e.xRadius, e.yRadius, c.center, c.radius)) addUnique(pt)
+      }
+    }
   }
   if (infB.circles.length > 0 && infA.ellipses.length > 0) {
-    const segs = ellipsesToSegs(infA.ellipses)
-    for (const c of infB.circles) segsCircle(segs, c.center, c.radius)
+    for (const c of infB.circles) {
+      for (const e of infA.ellipses) {
+        for (const pt of ellipseCircleIntersections(e.center, e.xRadius, e.yRadius, c.center, c.radius)) addUnique(pt)
+      }
+    }
   }
 
   // --- 8. Circle-arc (exact circle-circle + angle filter) ---
@@ -429,31 +577,36 @@ export const computeIntersections = (a: DrawingElement, b: DrawingElement): Poin
     }
   }
 
-  // --- 9. Ellipse-arc / Ellipse-ellipse / Arc-arc ---
-  // Approximate using ellipse/arc polyline segments since exact math would need quartics.
-  const approxSegs: Point[] = []
-  for (const e of infA.ellipses) approxSegs.push(...ellipsePolyline(e.center, e.xRadius, e.yRadius))
-  for (const a of infA.arcs) approxSegs.push(...arcPolyline(a.start, a.end, a.sweepAngle))
-
-  const approxSegsB: Point[] = []
-  for (const e of infB.ellipses) approxSegsB.push(...ellipsePolyline(e.center, e.xRadius, e.yRadius))
-  for (const a of infB.arcs) approxSegsB.push(...arcPolyline(a.start, a.end, a.sweepAngle))
-
-  if (approxSegs.length >= 2 && approxSegsB.length >= 2) {
-    for (let i = 0; i + 1 < approxSegs.length; i += 2) {
-      for (let j = 0; j + 1 < approxSegsB.length; j += 2) {
-        const pt = segmentSegmentIntersection(approxSegs[i], approxSegs[i + 1], approxSegsB[j], approxSegsB[j + 1])
-        if (pt) addUnique(pt)
-      }
+  // --- 9. Ellipse-ellipse (Newton-Raphson refined) ---
+  for (const eA of infA.ellipses) {
+    for (const eB of infB.ellipses) {
+      for (const pt of ellipseEllipseIntersections(eA.center, eA.xRadius, eA.yRadius, eB.center, eB.xRadius, eB.yRadius)) addUnique(pt)
     }
   }
 
-  // Also connect ellipse/arc segs with existing circles
-  if (approxSegs.length >= 2) {
-    for (const c of infB.circles) segsCircle(approxSegs, c.center, c.radius)
+  // --- 10. Ellipse-arc (Newton-Raphson refined + angle filter) ---
+  for (const e of infA.ellipses) {
+    for (const a of infB.arcs) {
+      for (const pt of ellipseArcIntersections(e.center, e.xRadius, e.yRadius, a.start, a.end, a.sweepAngle)) addUnique(pt)
+    }
   }
-  if (approxSegsB.length >= 2) {
-    for (const c of infA.circles) segsCircle(approxSegsB, c.center, c.radius)
+  for (const e of infB.ellipses) {
+    for (const a of infA.arcs) {
+      for (const pt of ellipseArcIntersections(e.center, e.xRadius, e.yRadius, a.start, a.end, a.sweepAngle)) addUnique(pt)
+    }
+  }
+
+  // --- 11. Arc-arc (exact circle-circle + angle filter for both arcs) ---
+  for (const aA of infA.arcs) {
+    for (const aB of infB.arcs) {
+      const geoA = getArcGeometry(aA.start, aA.end, aA.sweepAngle)
+      const geoB = getArcGeometry(aB.start, aB.end, aB.sweepAngle)
+      if (!geoA || !geoB) continue
+      const ccPts = circleCircleIntersections(geoA.center, geoA.radius, geoB.center, geoB.radius)
+      for (const pt of ccPts) {
+        if (isPointOnArc(pt, geoA) && isPointOnArc(pt, geoB)) addUnique(pt)
+      }
+    }
   }
 
   return results

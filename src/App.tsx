@@ -615,16 +615,18 @@ function App() {
                   setIntersectionPickIds((prev) => {
                     if (prev.includes(id)) return prev
                     const next = [...prev, id]
-                    if (next.length === 2) {
-                      const elA = elementsRef.current.find((e) => e.id === next[0])
-                      const elB = elementsRef.current.find((e) => e.id === next[1])
-                      if (elA && elB) {
-                        setIntersectionPoints(computeIntersections(elA, elB))
-                      }
-                      return []
-                    }
+                    if (next.length === 2) return []  // clear immediately
                     return next
                   })
+                  // compute AFTER state reset so bold clears in same render
+                  const current = intersectionPickIds
+                  if (!current.includes(id) && current.length === 1) {
+                    const elA = elementsRef.current.find((e) => e.id === current[0])
+                    const elB = elementsRef.current.find((e) => e.id === id)
+                    if (elA && elB) {
+                      setIntersectionPoints(computeIntersections(elA, elB))
+                    }
+                  }
                 }}
                 intersectionPickIds={intersectionPickIds}
                 onSelect={setSelectedId}
