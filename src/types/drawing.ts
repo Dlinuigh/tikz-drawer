@@ -9,6 +9,13 @@ export type GridConfig = {
   gridColor: string
   gridLineStyle: 'solid' | 'dashed' | 'dotted'
   gridLineWidth: number
+  /** When true, compiled TikZ includes a background grid in the output */
+  showGridInExport: boolean
+  /** TikZ grid bounds (TikZ coordinates) when exporting grid */
+  gridExportXMin: number
+  gridExportXMax: number
+  gridExportYMin: number
+  gridExportYMax: number
 }
 
 export const defaultGridConfig: GridConfig = {
@@ -17,6 +24,11 @@ export const defaultGridConfig: GridConfig = {
   gridColor: '#e5e7eb',
   gridLineStyle: 'solid',
   gridLineWidth: 1,
+  showGridInExport: false,
+  gridExportXMin: -10,
+  gridExportXMax: 10,
+  gridExportYMin: -8,
+  gridExportYMax: 8,
 }
 
 export type LineSubtool = 'twoPoints' | 'pointSlope'

@@ -18,6 +18,14 @@ export const defaultCoordinateSystem: CoordinateSystem = {
   snapToGrid: true,
 }
 
+/** SVG pixel position of TikZ (0,0); panning only changes this. */
+export const defaultViewOrigin = (): Point => ({ ...defaultCoordinateSystem.origin })
+
+export const coordinateSystemWithOrigin = (origin: Point): CoordinateSystem => ({
+  ...defaultCoordinateSystem,
+  origin: { ...origin },
+})
+
 export const svgToTikz = (point: Point, coordinateSystem = defaultCoordinateSystem): Point => ({
   x: (point.x - coordinateSystem.origin.x) / coordinateSystem.pixelsPerUnit,
   y: (coordinateSystem.origin.y - point.y) / coordinateSystem.pixelsPerUnit,

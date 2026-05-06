@@ -31,9 +31,11 @@ function savePresets(colors: string[]) {
 type ColorPickerProps = {
   color: string
   onChange: (color: string) => void
+  /** full = wheel + presets (toolbar); presets = swatches + hex + edit only */
+  variant?: 'full' | 'presets'
 }
 
-export function ColorPicker({ color, onChange }: ColorPickerProps) {
+export function ColorPicker({ color, onChange, variant = 'full' }: ColorPickerProps) {
   const [presets, setPresets] = useState<string[]>(loadPresets)
   const [editing, setEditing] = useState(false)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
@@ -105,8 +107,8 @@ export function ColorPicker({ color, onChange }: ColorPickerProps) {
   }, [adding, editingIndex])
 
   return (
-    <div className="color-picker">
-      <HexColorPicker color={color} onChange={handleChange} />
+    <div className={`color-picker ${variant === 'presets' ? 'color-picker-presets-only' : ''}`}>
+      {variant === 'full' && <HexColorPicker color={color} onChange={handleChange} />}
       <HexColorInput prefixed alpha={false} color={color} onChange={handleChange} />
 
       <div className="preset-header">

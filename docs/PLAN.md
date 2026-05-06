@@ -51,3 +51,11 @@ flowchart LR
 - 已实现图元到 TikZ 代码的转换。
 - 已实现 Tauri 后端本机 LaTeX 编译命令和前端预览/日志。
 - 已通过 `npm run build`、`npm run lint`、`cargo check` 和本机 `pdflatex` 示例编译验证。
+
+## 2026-05-06 会话增量
+
+- **视图**：`viewOrigin` 状态 + `coordinateSystemWithOrigin`；Alt/中键拖移平移；菜单 View：居中选中图元、重置视图；新建画布时重置视图。
+- **刻度**：`tickValuesInRange` 与 `mergeAxisTickMarks` 修正，轴线刻度包含 **0**。
+- **网格**：`GridConfig` 增加 `showGridInExport` 与导出范围；`buildTikzPicture` 可选 `\\draw[help lines] ... grid`；菜单 Grid：切换编辑区网格、切换导出网格、打开网格设置对话框。
+- **工具栏**：直线/圆弧选项改为工具栏右侧浮动菜单；属性面板可滚动、颜色为预设模式。
+- **多段线**：Esc 结束绘制（≥2 点提交，否则取消）。

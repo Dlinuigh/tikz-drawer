@@ -385,7 +385,9 @@ export function PropertiesPanel({ selectedElement, onUpdate, onDelete, onClose }
             ✕
           </button>
         </div>
-        <p className="hint">用选择工具点击图形后，可以在这里修改箭头、线型、颜色和圆弧角度。</p>
+        <div className="properties-panel-scroll">
+          <p className="hint">用选择工具点击图形后，可以在这里修改箭头、线型、颜色和圆弧角度。</p>
+        </div>
       </aside>
     )
   }
@@ -398,6 +400,7 @@ export function PropertiesPanel({ selectedElement, onUpdate, onDelete, onClose }
           ✕
         </button>
       </div>
+      <div className="properties-panel-scroll">
       <p className="element-id">{elementTypeLabel[selectedElement.type]} · {selectedElement.id}</p>
 
       <label>
@@ -443,6 +446,7 @@ export function PropertiesPanel({ selectedElement, onUpdate, onDelete, onClose }
         颜色
         <ColorPicker
           color={selectedElement.style.drawColor}
+          variant="presets"
           onChange={(drawColor) => onUpdate(updateStyle(selectedElement, { drawColor }))}
         />
       </label>
@@ -516,6 +520,7 @@ export function PropertiesPanel({ selectedElement, onUpdate, onDelete, onClose }
       <button className="danger" type="button" onClick={() => onDelete(selectedElement.id)}>
         删除图形
       </button>
+      </div>
     </aside>
   )
 }

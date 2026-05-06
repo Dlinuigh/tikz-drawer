@@ -227,6 +227,17 @@ pub fn run() {
         .quit()
         .build()?;
 
+      let view_menu = SubmenuBuilder::new(app, "View")
+        .item(&MenuItemBuilder::with_id("center_on_selection", "Center on Selection").build(app)?)
+        .item(&MenuItemBuilder::with_id("reset_view", "Reset Canvas View").build(app)?)
+        .build()?;
+
+      let grid_menu = SubmenuBuilder::new(app, "Grid")
+        .item(&MenuItemBuilder::with_id("grid_toggle_canvas", "Toggle Grid (Editor)").accelerator("CmdOrCtrl+G").build(app)?)
+        .item(&MenuItemBuilder::with_id("grid_toggle_export", "Toggle Grid in Export").build(app)?)
+        .item(&MenuItemBuilder::with_id("grid_settings", "Grid Settings…").build(app)?)
+        .build()?;
+
       let compile_menu = SubmenuBuilder::new(app, "Compile")
         .item(&MenuItemBuilder::with_id("compile", "Compile").accelerator("CmdOrCtrl+R").build(app)?)
         .item(&MenuItemBuilder::with_id("copy_code", "Copy TikZ Code").accelerator("CmdOrCtrl+Shift+C").build(app)?)
@@ -235,6 +246,8 @@ pub fn run() {
 
       let menu = MenuBuilder::new(app)
         .item(&file_menu)
+        .item(&view_menu)
+        .item(&grid_menu)
         .item(&compile_menu)
         .build()?;
 
@@ -248,6 +261,11 @@ pub fn run() {
           "new_canvas" => { let _ = handle.emit("menu-new-canvas", ()); }
           "export_pdf" => { let _ = handle.emit("menu-export-pdf", ()); }
           "export_png" => { let _ = handle.emit("menu-export-png", ()); }
+          "center_on_selection" => { let _ = handle.emit("menu-center-on-selection", ()); }
+          "reset_view" => { let _ = handle.emit("menu-reset-view", ()); }
+          "grid_toggle_canvas" => { let _ = handle.emit("menu-grid-toggle-canvas", ()); }
+          "grid_toggle_export" => { let _ = handle.emit("menu-grid-toggle-export", ()); }
+          "grid_settings" => { let _ = handle.emit("menu-grid-settings", ()); }
           "compile" => { let _ = handle.emit("menu-compile", ()); }
           "copy_code" => { let _ = handle.emit("menu-copy-code", ()); }
           "open_pdf" => { let _ = handle.emit("menu-open-pdf", ()); }

@@ -1,4 +1,5 @@
-import type { ArcElement, AxesElement, CircleElement, DrawingElement, DrawingStyle, EllipseElement } from '../types/drawing'
+import type { ArcElement, AxesElement, CircleElement, DrawingElement, DrawingStyle, EllipseElement, GridConfig } from '../types/drawing'
+import { defaultGridConfig } from '../types/drawing'
 import {
   axesNameLabelOffset,
   axesTickHalfLength,
@@ -218,14 +219,32 @@ export const elementToTikz = (element: DrawingElement): string => {
   return arcToTikz(element)
 }
 
-export const buildTikzPicture = (elements: DrawingElement[]): string => {
+const gridToTikz = (gc: GridConfig): string => {
+  const x0 = formatNumber(Math.min(gc.gridExportXMin, gc.gridExportXMax))
+  const x1 = formatNumber(Math.max(gc.gridExportXMin, gc.gridExportXMax))
+  const y0 = formatNumber(Math.min(gc.gridExportYMin, gc.gridExportYMax))
+  const y1 = formatNumber(Math.max(gc.gridExportYMin, gc.gridExportYMax))
+  const step = formatNumber(gc.gridStep)
+  const lw = formatNumber(gc.gridLineWidth)
+  const dashStyle =
+    gc.gridLineStyle === 'dashed' ? ', dashed' : gc.gridLineStyle === 'dotted' ? ', dotted' : ''
+  const c = colorName(gc.gridColor)
+  return `\\draw[help lines, step=${step}, color=${c}, line width=${lw}pt${dashStyle}] (${x0},${y0}) grid (${x1},${y1});`
+}
+
+export const buildTikzPicture = (elements: DrawingElement[], gridConfig: GridConfig = defaultGridConfig): string => {
   const body = elements.length > 0 ? elements.map(elementToTikz).join('\n') : '% Draw with the toolbar to generate TikZ paths.'
-  const colorDefinitions = [...new Set(elements.map((element) => element.style.drawColor))]
+  const colorSet = new Set(elements.map((element) => element.style.drawColor))
+  if (gridConfig.showGridInExport) {
+    colorSet.add(gridConfig.gridColor)
+  }
+  const colorDefinitions = [...colorSet]
     .map((hex) => `\\definecolor{${colorName(hex)}}{HTML}{${normalizeHex(hex)}}`)
     .join('\n')
   const prefix = colorDefinitions ? `${colorDefinitions}\n\n` : ''
+  const gridLine = gridConfig.showGridInExport ? `${gridToTikz(gridConfig)}\n` : ''
 
-  return `${prefix}\\begin{tikzpicture}\n${body}\n\\end{tikzpicture}`
+  return `${prefix}\\begin{tikzpicture}\n${gridLine}${body}\n\\end{tikzpicture}`
 }
 
 export const buildLatexDocument = (tikzPicture: string): string => `\\documentclass[tikz,border=6pt]{standalone}

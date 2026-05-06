@@ -36,6 +36,11 @@ All notable changes to TikZ Drawer will be documented in this file.
 
 ### Changed
 
+- **Axes ticks**: step-based ticks now include **0** when it lies in range (previously skipped).
+- **View / coordinates**: TikZ origin stays at `(0,0)`; **Alt+drag** or **middle-mouse drag** pans the canvas by changing the view origin. **View** menu: *Center on Selection*, *Reset Canvas View*. **Grid** menu: toggle editor grid (`⌘G`), toggle grid in PDF export, *Grid Settings…* (bounds, step, color, line style). Export grid is independent from the editor grid (`showGridInExport`).
+- **Toolbar**: line mode (**两点 / 点斜**) and arc angle open as **floating menus** to the right of the toolbar; click the tool again, click outside, or **Esc** to close.
+- **Properties panel**: scrollable body; color section uses **preset-only** picker (no large color wheel).
+- **Polyline**: **Escape** finishes the polyline (≥2 points) or cancels if fewer than 2 points.
 - **UI overhaul**: complete layout refactoring to VSCode-like fixed window; removed `.app-header`; `App.css` rewritten for `height: 100vh; overflow: hidden` layout.
 - Toolbar simplified to compact tool strip; style controls moved to `FloatingStylePanel` popup.
 - `ColorPicker` refactored with state-managed presets, add/edit/delete modes, localStorage persistence.

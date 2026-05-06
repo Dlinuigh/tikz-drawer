@@ -3,13 +3,15 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import './App.css'
 import { DrawingCanvas } from './components/DrawingCanvas'
+import { GridSettingsModal } from './components/GridSettingsModal'
 import { AxesBoundsModal, LineSlopeModal } from './components/DrawingModals'
 import { PreviewPanel, type CompileResult } from './components/PreviewPanel'
 import { PropertiesPanel } from './components/PropertiesPanel'
 import { StatusBar } from './components/StatusBar'
 import { Toolbar } from './components/Toolbar'
+import { tikzCenterOfElement } from './lib/elementCenter'
 import { buildTikzPicture } from './lib/tikz'
-import { snapTikzPoint } from './lib/geometry'
+import { coordinateSystemWithOrigin, defaultCoordinateSystem, defaultViewOrigin, snapTikzPoint } from './lib/geometry'
 import type { DraftElement, DrawingElement, DrawingStyle, GridConfig, LineSubtool, Point, Tool } from './types/drawing'
 import { defaultAxesOptions, defaultGridConfig, defaultStyle } from './types/drawing'
 
@@ -30,15 +32,23 @@ function App() {
   const [isCompiling, setIsCompiling] = useState(false)
   const [propertiesOpen, setPropertiesOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [viewOrigin, setViewOrigin] = useState<Point>(() => defaultViewOrigin())
+  const [gridSettingsOpen, setGridSettingsOpen] = useState(false)
+
+  const coordinateSystem = useMemo(() => coordinateSystemWithOrigin(viewOrigin), [viewOrigin])
 
   const selectedElement = elements.find((element) => element.id === selectedId) ?? null
-  const tikzCode = useMemo(() => buildTikzPicture(elements), [elements])
+  const tikzCode = useMemo(() => buildTikzPicture(elements, gridConfig), [elements, gridConfig])
 
   // Refs for menu event handlers to avoid stale closures
   const elementsRef = useRef(elements)
   elementsRef.current = elements
   const compileResultRef = useRef(compileResult)
   compileResultRef.current = compileResult
+  const selectedIdRef = useRef(selectedId)
+  selectedIdRef.current = selectedId
+  const gridConfigRef = useRef(gridConfig)
+  gridConfigRef.current = gridConfig
 
   const updateElement = (updatedElement: DrawingElement) => {
     setElements((currentElements) =>
@@ -88,14 +98,48 @@ function App() {
         setSelectedId(null)
         setAxesModalOrigin(null)
         setLineSlopeAnchor(null)
+        setViewOrigin(defaultViewOrigin())
       })
       unlisteners.push(ul1)
+
+      const ulCenter = await listen('menu-center-on-selection', () => {
+        const id = selectedIdRef.current
+        const el = elementsRef.current.find((e) => e.id === id)
+        if (!el) return
+        const c = tikzCenterOfElement(el)
+        if (!c) return
+        const w = defaultCoordinateSystem.width
+        const h = defaultCoordinateSystem.height
+        const ppu = defaultCoordinateSystem.pixelsPerUnit
+        setViewOrigin({ x: w / 2 - c.x * ppu, y: h / 2 + c.y * ppu })
+      })
+      unlisteners.push(ulCenter)
+
+      const ulReset = await listen('menu-reset-view', () => {
+        setViewOrigin(defaultViewOrigin())
+      })
+      unlisteners.push(ulReset)
+
+      const ulGridCanvas = await listen('menu-grid-toggle-canvas', () => {
+        setGridConfig((gc) => ({ ...gc, showGrid: !gc.showGrid }))
+      })
+      unlisteners.push(ulGridCanvas)
+
+      const ulGridExport = await listen('menu-grid-toggle-export', () => {
+        setGridConfig((gc) => ({ ...gc, showGridInExport: !gc.showGridInExport }))
+      })
+      unlisteners.push(ulGridExport)
+
+      const ulGridSettings = await listen('menu-grid-settings', () => {
+        setGridSettingsOpen(true)
+      })
+      unlisteners.push(ulGridSettings)
 
       const ul2 = await listen('menu-compile', async () => {
         setIsCompiling(true)
         setCompileResult(null)
         try {
-          const code = buildTikzPicture(elementsRef.current)
+          const code = buildTikzPicture(elementsRef.current, gridConfigRef.current)
           const result = await invoke<CompileResult>('compile_tikz', { tikzCode: code })
           setCompileResult(result)
         } catch (error) {
@@ -111,7 +155,7 @@ function App() {
 
       const ul3 = await listen('menu-copy-code', async () => {
         try {
-          await navigator.clipboard.writeText(buildTikzPicture(elementsRef.current))
+          await navigator.clipboard.writeText(buildTikzPicture(elementsRef.current, gridConfigRef.current))
         } catch {
           // ignore
         }
@@ -256,6 +300,7 @@ function App() {
           <DrawingCanvas
             activeTool={activeTool}
             arcAngle={arcAngle}
+            coordinateSystem={coordinateSystem}
             currentStyle={currentStyle}
             draft={draft}
             elements={elements}
@@ -270,14 +315,9 @@ function App() {
             onDraftChange={setDraft}
             onLineSlopeAnchorPick={(anchor) => setLineSlopeAnchor(anchor)}
             onSelect={setSelectedId}
+            onViewOriginChange={setViewOrigin}
           />
-          <StatusBar
-            compileResult={compileResult}
-            gridConfig={gridConfig}
-            isCompiling={isCompiling}
-            onCompile={compileTikz}
-            onGridConfigChange={setGridConfig}
-          />
+          <StatusBar compileResult={compileResult} gridConfig={gridConfig} isCompiling={isCompiling} onCompile={compileTikz} />
         </div>
 
         <div className={`properties-wrapper ${propertiesOpen ? 'open' : ''}`}>
@@ -322,6 +362,13 @@ function App() {
           TikZ 预览
         </button>
       )}
+
+      <GridSettingsModal
+        gridConfig={gridConfig}
+        open={gridSettingsOpen}
+        onClose={() => setGridSettingsOpen(false)}
+        onSave={setGridConfig}
+      />
     </main>
   )
 }

@@ -56,7 +56,11 @@
 }
 
 .properties-wrapper {
+  display: flex;
+  flex-direction: column;
   flex-shrink: 0;
+  max-height: 100%;
+  min-height: 0;
   overflow: hidden;
   transition: width 0.2s ease;
   width: 0;
@@ -66,8 +70,70 @@
   width: 210px;
 }
 
+.properties-wrapper.open .properties-panel {
+  flex: 1;
+  min-height: 0;
+}
+
 .toolbar {
   flex-shrink: 0;
+  position: relative;
+}
+
+.toolbar-floating-menu {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  left: calc(100% + 6px);
+  padding: 8px;
+  position: absolute;
+  width: max-content;
+  z-index: 450;
+}
+
+.toolbar-floating-menu-line {
+  top: 34px;
+}
+
+.toolbar-floating-menu-arc {
+  top: 68px;
+}
+
+.toolbar-floating-menu-wide {
+  min-width: 140px;
+}
+
+.tool-menu-item {
+  background: var(--control);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 6px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tool-menu-item:hover {
+  border-color: var(--accent);
+}
+
+.tool-menu-item.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.toolbar-arc-menu-label {
+  color: var(--text-h);
+  display: grid;
+  font-size: 12px;
+  gap: 6px;
+  margin: 0;
 }
 
 .preview-wrapper {
@@ -117,8 +183,21 @@
   background: var(--panel);
 }
 
+.properties-panel-scroll {
+  flex: 1;
+  max-height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .properties-panel {
   border-radius: 0;
+}
+
+.color-picker-presets-only .react-colorful {
+  display: none;
 }
 
 .preview-panel,
@@ -130,10 +209,23 @@
 }
 
 .properties-panel {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  height: 100%;
+  padding: 12px;
+}
+
+.properties-panel .properties-header {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+
+.properties-panel-scroll {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 12px;
 }
 
 .properties-panel {
@@ -263,6 +355,12 @@
   width: 100%;
   padding: 18px 20px;
   box-sizing: border-box;
+}
+
+.grid-settings-modal {
+  max-height: min(90vh, 560px);
+  max-width: 420px;
+  overflow-y: auto;
 }
 
 .modal-panel h3 {

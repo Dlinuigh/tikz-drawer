@@ -6,10 +6,9 @@ type StatusBarProps = {
   gridConfig: GridConfig
   isCompiling: boolean
   onCompile: () => void
-  onGridConfigChange: (config: GridConfig) => void
 }
 
-export function StatusBar({ compileResult, gridConfig, isCompiling, onCompile, onGridConfigChange }: StatusBarProps) {
+export function StatusBar({ compileResult, gridConfig, isCompiling, onCompile }: StatusBarProps) {
   const compileStatus = isCompiling
     ? '编译中…'
     : compileResult?.success
@@ -40,14 +39,11 @@ export function StatusBar({ compileResult, gridConfig, isCompiling, onCompile, o
         </button>
       </div>
       <div className="status-bar-center">
-        <button
-          className="status-item status-grid-btn"
-          type="button"
-          title="点击切换网格开关"
-          onClick={() => onGridConfigChange({ ...gridConfig, showGrid: !gridConfig.showGrid })}
-        >
-          网格：{gridConfig.showGrid ? `${gridConfig.gridStep}` : '关'}
-        </button>
+        <span className="status-item" title="使用菜单栏 Grid 子菜单可详细设置">
+          编辑栅格 {gridConfig.showGrid ? `步长 ${gridConfig.gridStep}` : '关'}
+        </span>
+        <span className="status-item">导出栅格 {gridConfig.showGridInExport ? '开' : '关'}</span>
+        <span className="status-item">Alt/中键 拖移画布</span>
       </div>
       <div className="status-bar-right">
         <span className="status-item">TikZ Drawer</span>

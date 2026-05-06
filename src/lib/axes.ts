@@ -34,7 +34,7 @@ export const getAxesSegments = (
   },
 })
 
-/** Tick positions in [min, max] by step; skips 0. Non-positive step yields []. */
+/** Tick positions in [min, max] by step; includes 0 when it lies in range. Non-positive step yields []. */
 export const tickValuesInRange = (min: number, max: number, step: number): number[] => {
   if (step <= 0 || min > max) {
     return []
@@ -44,11 +44,8 @@ export const tickValuesInRange = (min: number, max: number, step: number): numbe
   const start = Math.ceil(min / step) * step
 
   for (let v = start; v <= max + 1e-9; v += step) {
-    if (Math.abs(v) < 1e-9) {
-      continue
-    }
     if (v >= min - 1e-9 && v <= max + 1e-9) {
-      ticks.push(v)
+      ticks.push(Math.abs(v) < 1e-9 ? 0 : v)
     }
   }
 
@@ -85,7 +82,9 @@ export const mergeAxisTickMarks = (
     })) ?? []
   const allowZero = manualList.some((m) => Math.abs(m.value) <= nearlyZeroTol)
 
-  const steppedFiltered = stepped.map(normNearZero).filter((v) => axisValueInTickRange(v, min, max, false))
+  const steppedFiltered = stepped
+    .map(normNearZero)
+    .filter((v) => axisValueInTickRange(v, min, max, true))
 
   const fromManualPositions = manualList
     .filter((m) => axisValueInTickRange(m.value, min, max, allowZero))

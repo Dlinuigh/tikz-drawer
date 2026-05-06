@@ -1,5 +1,7 @@
-import type { MouseEvent, ReactNode } from 'react'
-import { defaultCoordinateSystem, distance, getArcGeometry, snapTikzPoint, svgToTikz, tikzToSvg } from '../lib/geometry'
+import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
+import type { CoordinateSystem } from '../lib/geometry'
+import { distance, getArcGeometry, snapTikzPoint, svgToTikz, tikzToSvg } from '../lib/geometry'
 import {
   axesNameLabelOffset,
   axesTickHalfLength,
@@ -20,6 +22,8 @@ type DrawingCanvasProps = {
   currentStyle: DrawingStyle
   arcAngle: number
   gridConfig: GridConfig
+  coordinateSystem: CoordinateSystem
+  onViewOriginChange: (origin: Point) => void
   onCreate: (element: DrawingElement) => void
   onDraftChange: (draft: DraftElement | null) => void
   onSelect: (id: string | null) => void
@@ -29,10 +33,10 @@ type DrawingCanvasProps = {
 
 const createId = () => crypto.randomUUID()
 
-const getSvgPoint = (event: MouseEvent<SVGSVGElement>): Point => {
+const getSvgPoint = (event: MouseEvent<SVGSVGElement>, cs: CoordinateSystem): Point => {
   const rect = event.currentTarget.getBoundingClientRect()
-  const scaleX = defaultCoordinateSystem.width / rect.width
-  const scaleY = defaultCoordinateSystem.height / rect.height
+  const scaleX = cs.width / rect.width
+  const scaleY = cs.height / rect.height
 
   return {
     x: (event.clientX - rect.left) * scaleX,
@@ -40,25 +44,25 @@ const getSvgPoint = (event: MouseEvent<SVGSVGElement>): Point => {
   }
 }
 
-const arcPath = (start: Point, end: Point, sweepAngle: number): string => {
-  const startSvg = tikzToSvg(start)
-  const endSvg = tikzToSvg(end)
+const arcPath = (start: Point, end: Point, sweepAngle: number, cs: CoordinateSystem): string => {
+  const startSvg = tikzToSvg(start, cs)
+  const endSvg = tikzToSvg(end, cs)
   const geometry = getArcGeometry(start, end, sweepAngle)
 
   if (!geometry) {
     return `M ${startSvg.x} ${startSvg.y} L ${endSvg.x} ${endSvg.y}`
   }
 
-  const radius = geometry.radius * defaultCoordinateSystem.pixelsPerUnit
+  const radius = geometry.radius * cs.pixelsPerUnit
   const largeArcFlag = Math.abs(sweepAngle) > 180 ? 1 : 0
   const sweepFlag = sweepAngle > 0 ? 0 : 1
 
   return `M ${startSvg.x} ${startSvg.y} A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${endSvg.x} ${endSvg.y}`
 }
 
-const rectangleBounds = (start: Point, end: Point) => {
-  const startSvg = tikzToSvg(start)
-  const endSvg = tikzToSvg(end)
+const rectangleBounds = (start: Point, end: Point, cs: CoordinateSystem) => {
+  const startSvg = tikzToSvg(start, cs)
+  const endSvg = tikzToSvg(end, cs)
 
   return {
     x: Math.min(startSvg.x, endSvg.x),
@@ -68,9 +72,9 @@ const rectangleBounds = (start: Point, end: Point) => {
   }
 }
 
-const ellipseRadii = (center: Point, radiusPoint: Point) => ({
-  rx: Math.abs(radiusPoint.x - center.x) * defaultCoordinateSystem.pixelsPerUnit,
-  ry: Math.abs(radiusPoint.y - center.y) * defaultCoordinateSystem.pixelsPerUnit,
+const ellipseRadii = (center: Point, radiusPoint: Point, cs: CoordinateSystem) => ({
+  rx: Math.abs(radiusPoint.x - center.x) * cs.pixelsPerUnit,
+  ry: Math.abs(radiusPoint.y - center.y) * cs.pixelsPerUnit,
 })
 
 const lineDash = (style: DrawingStyle): string | undefined => {
@@ -98,8 +102,8 @@ const svgLineCap: Record<DrawingStyle['lineCap'], 'butt' | 'round' | 'square'> =
   rect: 'square',
 }
 
-const gridLines = (gridConfig: GridConfig) => {
-  const { width, height, pixelsPerUnit, origin } = defaultCoordinateSystem
+const gridLines = (gridConfig: GridConfig, cs: CoordinateSystem) => {
+  const { width, height, pixelsPerUnit, origin } = cs
   const { gridStep } = gridConfig
   if (!gridConfig.showGrid) {
     return []
@@ -111,14 +115,14 @@ const gridLines = (gridConfig: GridConfig) => {
   const lines: Array<{ id: string; x1: number; x2: number; y1: number; y2: number }> = []
 
   for (let x = minX; x <= maxX; x += gridStep) {
-    const top = tikzToSvg({ x, y: maxY })
-    const bottom = tikzToSvg({ x, y: minY })
+    const top = tikzToSvg({ x, y: maxY }, cs)
+    const bottom = tikzToSvg({ x, y: minY }, cs)
     lines.push({ id: `x-${x}`, x1: top.x, x2: bottom.x, y1: top.y, y2: bottom.y })
   }
 
   for (let y = minY; y <= maxY; y += gridStep) {
-    const left = tikzToSvg({ x: minX, y })
-    const right = tikzToSvg({ x: maxX, y })
+    const left = tikzToSvg({ x: minX, y }, cs)
+    const right = tikzToSvg({ x: maxX, y }, cs)
     lines.push({ id: `y-${y}`, x1: left.x, x2: right.x, y1: left.y, y2: right.y })
   }
 
@@ -146,14 +150,51 @@ export function DrawingCanvas({
   currentStyle,
   arcAngle,
   gridConfig,
+  coordinateSystem: cs,
+  onViewOriginChange,
   onCreate,
   onDraftChange,
   onSelect,
   onAxesOriginPick,
   onLineSlopeAnchorPick,
 }: DrawingCanvasProps) {
+  const panLast = useRef<{ x: number; y: number } | null>(null)
+  const skipNextClick = useRef(false)
+  const draftRef = useRef(draft)
+  draftRef.current = draft
+
+  const finishPolyline = useCallback(() => {
+    const d = draftRef.current
+    if (d?.type !== 'polyline' || !d.points || d.points.length < 2) {
+      return
+    }
+
+    onCreate({ id: createId(), type: 'polyline', points: d.points, style: d.style })
+    onDraftChange(null)
+  }, [onCreate, onDraftChange])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const d = draftRef.current
+      if (d?.type !== 'polyline') return
+      e.preventDefault()
+      if ((d.points?.length ?? 0) >= 2) {
+        finishPolyline()
+      } else {
+        onDraftChange(null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [finishPolyline, onDraftChange])
+
   const handleCanvasClick = (event: MouseEvent<SVGSVGElement>) => {
-    const point = snapTikzPoint(svgToTikz(getSvgPoint(event)))
+    if (skipNextClick.current) {
+      skipNextClick.current = false
+      return
+    }
+    const point = snapTikzPoint(svgToTikz(getSvgPoint(event, cs), cs), cs)
 
     if (activeTool === 'select') {
       onSelect(null)
@@ -213,18 +254,30 @@ export function DrawingCanvas({
 
     onDraftChange({
       ...draft,
-      end: snapTikzPoint(svgToTikz(getSvgPoint(event))),
+      end: snapTikzPoint(svgToTikz(getSvgPoint(event, cs), cs), cs),
       sweepAngle: draft.type === 'arc' ? arcAngle : draft.sweepAngle,
     })
   }
 
-  const finishPolyline = () => {
-    if (draft?.type !== 'polyline' || !draft.points || draft.points.length < 2) {
-      return
-    }
+  const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (!event.altKey && event.button !== 1) return
+    event.preventDefault()
+    panLast.current = { x: event.clientX, y: event.clientY }
+  }
 
-    onCreate({ id: createId(), type: 'polyline', points: draft.points, style: draft.style })
-    onDraftChange(null)
+  const handlePointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (!panLast.current) return
+    const dx = event.clientX - panLast.current.x
+    const dy = event.clientY - panLast.current.y
+    if (dx !== 0 || dy !== 0) {
+      skipNextClick.current = true
+    }
+    panLast.current = { x: event.clientX, y: event.clientY }
+    onViewOriginChange({ x: cs.origin.x + dx, y: cs.origin.y + dy })
+  }
+
+  const handlePointerUp = () => {
+    panLast.current = null
   }
 
   const renderElement = (element: DrawingElement, isDraft = false) => {
@@ -242,8 +295,8 @@ export function DrawingCanvas({
     }
 
     if (element.type === 'line') {
-      const start = tikzToSvg(element.start)
-      const end = tikzToSvg(element.end)
+      const start = tikzToSvg(element.start, cs)
+      const end = tikzToSvg(element.end, cs)
 
       return (
         <line
@@ -266,7 +319,7 @@ export function DrawingCanvas({
         <path
           key={element.id}
           {...commonProps}
-          d={arcPath(element.start, element.end, element.sweepAngle)}
+          d={arcPath(element.start, element.end, element.sweepAngle, cs)}
           onClick={(event) => {
             event.stopPropagation()
             onSelect(element.id)
@@ -276,7 +329,7 @@ export function DrawingCanvas({
     }
 
     if (element.type === 'rectangle') {
-      const bounds = rectangleBounds(element.start, element.end)
+      const bounds = rectangleBounds(element.start, element.end, cs)
 
       return (
         <rect
@@ -296,7 +349,7 @@ export function DrawingCanvas({
     }
 
     if (element.type === 'circle') {
-      const center = tikzToSvg(element.center)
+      const center = tikzToSvg(element.center, cs)
 
       return (
         <circle
@@ -305,7 +358,7 @@ export function DrawingCanvas({
           cx={center.x}
           cy={center.y}
           fill="none"
-          r={distance(element.center, element.radiusPoint) * defaultCoordinateSystem.pixelsPerUnit}
+          r={distance(element.center, element.radiusPoint) * cs.pixelsPerUnit}
           onClick={(event) => {
             event.stopPropagation()
             onSelect(element.id)
@@ -315,8 +368,8 @@ export function DrawingCanvas({
     }
 
     if (element.type === 'ellipse') {
-      const center = tikzToSvg(element.center)
-      const radii = ellipseRadii(element.center, element.radiusPoint)
+      const center = tikzToSvg(element.center, cs)
+      const radii = ellipseRadii(element.center, element.radiusPoint, cs)
 
       return (
         <ellipse
@@ -363,10 +416,10 @@ export function DrawingCanvas({
 
       const xSpan = Math.abs(x.end.x - x.start.x)
       const ySpan = Math.abs(y.end.y - y.start.y)
-      const xStartSvg = tikzToSvg(x.start)
-      const xEndSvg = tikzToSvg(x.end)
-      const yStartSvg = tikzToSvg(y.start)
-      const yEndSvg = tikzToSvg(y.end)
+      const xStartSvg = tikzToSvg(x.start, cs)
+      const xEndSvg = tikzToSvg(x.end, cs)
+      const yStartSvg = tikzToSvg(y.start, cs)
+      const yEndSvg = tikzToSvg(y.end, cs)
 
       const tickLabelProps = {
         className: selected ? 'axes-tick-label selected' : 'axes-tick-label',
@@ -426,8 +479,8 @@ export function DrawingCanvas({
         for (let i = 0; i < ticksX.length; i++) {
           const tick = ticksX[i]
           const tx = tick.value
-          const hi = tikzToSvg({ x: tx, y: oy + δ })
-          const lo = tikzToSvg({ x: tx, y: oy - δ })
+          const hi = tikzToSvg({ x: tx, y: oy + δ }, cs)
+          const lo = tikzToSvg({ x: tx, y: oy - δ }, cs)
           nodes.push(
             <line
               key={`${element.id}-xt-${i}-${tx}`}
@@ -440,7 +493,7 @@ export function DrawingCanvas({
             />,
           )
           if (element.showTickLabels) {
-            const labelPos = tikzToSvg({ x: tx, y: oy - δ - axesTickLabelOffset * 0.45 })
+            const labelPos = tikzToSvg({ x: tx, y: oy - δ - axesTickLabelOffset * 0.45 }, cs)
             nodes.push(
               <text
                 key={`${element.id}-xtl-${i}-${tx}`}
@@ -466,8 +519,8 @@ export function DrawingCanvas({
         for (let i = 0; i < ticksY.length; i++) {
           const tick = ticksY[i]
           const ty = tick.value
-          const left = tikzToSvg({ x: ox - δ, y: ty })
-          const right = tikzToSvg({ x: ox + δ, y: ty })
+          const left = tikzToSvg({ x: ox - δ, y: ty }, cs)
+          const right = tikzToSvg({ x: ox + δ, y: ty }, cs)
           nodes.push(
             <line
               key={`${element.id}-yt-${i}-${ty}`}
@@ -480,7 +533,7 @@ export function DrawingCanvas({
             />,
           )
           if (element.showTickLabels) {
-            const labelPos = tikzToSvg({ x: ox - δ - axesTickLabelOffset * 0.45, y: ty })
+            const labelPos = tikzToSvg({ x: ox - δ - axesTickLabelOffset * 0.45, y: ty }, cs)
             nodes.push(
               <text
                 key={`${element.id}-ytl-${i}-${ty}`}
@@ -499,10 +552,13 @@ export function DrawingCanvas({
       }
 
       if (element.labelX.trim() && xSpan > axesEpsilon) {
-        const p = tikzToSvg({
-          x: x.end.x + axesNameLabelOffset + element.labelXDx,
-          y: oy + element.labelXDy,
-        })
+        const p = tikzToSvg(
+          {
+            x: x.end.x + axesNameLabelOffset + element.labelXDx,
+            y: oy + element.labelXDy,
+          },
+          cs,
+        )
         const xLay = svgNameLabelAttrs(element.labelXPlacement)
         nodes.push(
           <text
@@ -520,10 +576,13 @@ export function DrawingCanvas({
       }
 
       if (element.labelY.trim() && ySpan > axesEpsilon) {
-        const p = tikzToSvg({
-          x: ox + element.labelYDx,
-          y: y.end.y + axesNameLabelOffset + element.labelYDy,
-        })
+        const p = tikzToSvg(
+          {
+            x: ox + element.labelYDx,
+            y: y.end.y + axesNameLabelOffset + element.labelYDy,
+          },
+          cs,
+        )
         const yLay = svgNameLabelAttrs(element.labelYPlacement)
         nodes.push(
           <text
@@ -552,7 +611,7 @@ export function DrawingCanvas({
         key={element.id}
         {...commonProps}
         fill="none"
-        points={element.points.map((point) => tikzToSvg(point)).map((point) => `${point.x},${point.y}`).join(' ')}
+        points={element.points.map((point) => tikzToSvg(point, cs)).map((point) => `${point.x},${point.y}`).join(' ')}
         onClick={(event) => {
           event.stopPropagation()
           onSelect(element.id)
@@ -574,7 +633,7 @@ export function DrawingCanvas({
               ? { id: 'draft', type: 'ellipse', center: draft.start, radiusPoint: draft.end, style: draft.style }
               : { id: 'draft', type: 'polyline', points: [...(draft.points ?? [draft.start]), draft.end], style: draft.style }
     : null
-  const origin = tikzToSvg({ x: 0, y: 0 })
+  const origin = tikzToSvg({ x: 0, y: 0 }, cs)
 
   return (
     <div className="canvas-card">
@@ -587,11 +646,17 @@ export function DrawingCanvas({
       )}
       <svg
         className="drawing-canvas"
-        height={defaultCoordinateSystem.height}
-        viewBox={`0 0 ${defaultCoordinateSystem.width} ${defaultCoordinateSystem.height}`}
-        width={defaultCoordinateSystem.width}
+        height={cs.height}
+        role="application"
+        tabIndex={0}
+        viewBox={`0 0 ${cs.width} ${cs.height}`}
+        width={cs.width}
         onClick={handleCanvasClick}
         onMouseMove={handleMouseMove}
+        onPointerDown={handlePointerDown}
+        onPointerLeave={handlePointerUp}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
       >
         <defs>
           <marker id="arrow-end" markerHeight="8" markerWidth="8" orient="auto" refX="7" refY="4">
@@ -601,8 +666,8 @@ export function DrawingCanvas({
             <path d="M 8 0 L 0 4 L 8 8 z" fill="context-stroke" />
           </marker>
         </defs>
-        <rect className="canvas-background" height={defaultCoordinateSystem.height} width={defaultCoordinateSystem.width} />
-        {gridLines(gridConfig).map((line) => (
+        <rect className="canvas-background" height={cs.height} width={cs.width} />
+        {gridLines(gridConfig, cs).map((line) => (
           <line
             key={line.id}
             className="grid-line"
@@ -615,8 +680,8 @@ export function DrawingCanvas({
             y2={line.y2}
           />
         ))}
-        <line className="axis" x1="0" x2={defaultCoordinateSystem.width} y1={origin.y} y2={origin.y} />
-        <line className="axis" x1={origin.x} x2={origin.x} y1="0" y2={defaultCoordinateSystem.height} />
+        <line className="axis" x1="0" x2={cs.width} y1={origin.y} y2={origin.y} />
+        <line className="axis" x1={origin.x} x2={origin.x} y1="0" y2={cs.height} />
         {elements.map((element) => renderElement(element))}
         {draftElement && renderElement(draftElement, true)}
       </svg>
