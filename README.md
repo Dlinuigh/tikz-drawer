@@ -1,6 +1,10 @@
 # TikZ Drawer
 
+[![CI](https://github.com/Dlinuigh/tikz-drawer/actions/workflows/ci.yml/badge.svg)](https://github.com/Dlinuigh/tikz-drawer/actions/workflows/ci.yml)
+
 TikZ Drawer 是一个 Tauri 桌面绘图软件，用按钮和表单绘制 TikZ 图形，并调用本机 LaTeX 编译预览。
+
+徽章表示默认分支上 **[CI](https://github.com/Dlinuigh/tikz-drawer/actions/workflows/ci.yml)** 工作流最近一次运行是否成功（Linux：`npm build` / `lint` + `cargo build`；macOS：`tauri build`）。详情请点击徽章进入 Actions。
 
 ## 功能
 

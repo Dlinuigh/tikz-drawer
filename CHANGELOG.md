@@ -4,7 +4,14 @@ All notable changes to TikZ Drawer will be documented in this file.
 
 ## Unreleased
 
-暂无已记录的变更。
+### Added
+
+- **GitHub Actions**：`.github/workflows/ci.yml` 在推送至 `main`/`master`、任意 PR 或手动 `workflow_dispatch` 时运行；Linux 任务执行 `npm ci`、`build`、`lint` 与 `cargo build --locked`，macOS 任务执行完整 `tauri build`。
+- **README**：顶部增加指向上述工作流的 CI 状态徽章与简要说明。
+
+### Changed
+
+- **ESLint**：`globalIgnores` 排除 `src-tauri/target`（避免扫描 Tauri 构建产物）；为 `App.tsx`、`DrawingCanvas.tsx` 关闭 `react-hooks/refs` 与 `react-hooks/set-state-in-effect`（与原生菜单 ref 同步及 PDF blob 生命周期一致），保证云端 `npm run lint` 稳定通过。
 
 ## 0.1.0 - 2026-05-06
 

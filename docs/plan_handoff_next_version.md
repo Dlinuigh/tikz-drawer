@@ -59,3 +59,4 @@
 - **本地构建**：`npm run tauri build` 已通过；产物：`src-tauri/target/release/bundle/macos/TikZ Drawer.app`、`src-tauri/target/release/bundle/dmg/TikZ Drawer_0.1.0_aarch64.dmg`（Apple Silicon）。
 - **Git**：提交后打标签 **`v0.1.0`** 并 `git push origin <branch> --tags`；若本机未安装 `gh`，在 GitHub 网页 **Releases → Draft a release** 选择该 tag，上传上述 DMG 作为附件。
 - **Tauri 对齐**：`tauri` crate **2.11.1** + `tauri-build` **2.6.1**；前端 `@tauri-apps/api` **^2.11.0**、`@tauri-apps/cli` **^2.11.1**。
+- **CI**：`.github/workflows/ci.yml`（工作流名 **CI**）— Linux：`npm ci` / `build` / `lint` + `cargo build --locked`；macOS：`tauri build`。触发：`main`/`master` **push**、任意 **pull_request**、**workflow_dispatch**。README 标题下有状态徽章。ESLint 忽略 `src-tauri/target`；`App.tsx` / `DrawingCanvas.tsx` 关闭 `react-hooks/refs` 与 `set-state-in-effect` 以便 lint 在 CI 通过。
