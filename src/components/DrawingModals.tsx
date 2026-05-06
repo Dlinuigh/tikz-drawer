@@ -154,6 +154,271 @@ function LineSlopeForm({
   )
 }
 
+/* ──────────── 圆：圆心 + 半径数值 ──────────── */
+
+type CircleRadiusModalProps = {
+  open: boolean
+  center: Point | null
+  onConfirm: (center: Point, radius: number) => void
+  onCancel: () => void
+}
+
+function CircleRadiusForm({
+  center,
+  onConfirm,
+  onCancel,
+}: {
+  center: Point
+  onConfirm: CircleRadiusModalProps['onConfirm']
+  onCancel: () => void
+}) {
+  const [radius, setRadius] = useState('2')
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = () => {
+    const r = parseFlexibleNumber(radius)
+    if (Number.isNaN(r) || r <= 0) {
+      setError('请输入有效的正数半径。')
+      return
+    }
+    onConfirm(center, r)
+  }
+
+  return (
+    <div className="modal-panel" role="dialog" aria-labelledby="circle-radius-modal-title" onMouseDown={(e) => e.stopPropagation()}>
+      <h3 id="circle-radius-modal-title">圆（圆心 + 半径）</h3>
+      <p className="hint">
+        圆心：({center.x}, {center.y})。输入半径值。
+      </p>
+      <label>
+        半径 r
+        <input value={radius} onChange={(e) => setRadius(e.target.value)} type="text" inputMode="decimal" />
+      </label>
+      {error && <p className="modal-error">{error}</p>}
+      <div className="modal-actions">
+        <button type="button" onClick={onCancel}>取消</button>
+        <button type="button" className="primary" onClick={submit}>确定</button>
+      </div>
+    </div>
+  )
+}
+
+/* ──────────── 交点命名 ──────────── */
+
+type IntersectionModalProps = {
+  open: boolean
+  points: Point[]
+  onConfirm: (names: string[]) => void
+  onCancel: () => void
+}
+
+function IntersectionForm({
+  points,
+  onConfirm,
+  onCancel,
+}: {
+  points: Point[]
+  onConfirm: IntersectionModalProps['onConfirm']
+  onCancel: () => void
+}) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+  const [names, setNames] = useState<string[]>(() =>
+    points.map((_, i) => (i < alphabet.length ? alphabet[i] : `P${i + 1}`)),
+  )
+
+  const submit = () => {
+    onConfirm(names)
+  }
+
+  return (
+    <div className="modal-panel" role="dialog" aria-labelledby="intersection-modal-title" onMouseDown={(e) => e.stopPropagation()}>
+      <h3 id="intersection-modal-title">交点</h3>
+      <p className="hint">
+        找到 {points.length} 个交点，为每个交点命名（将创建为点元素）。
+      </p>
+      {points.map((pt, i) => (
+        <label key={i}>
+          交点 {i + 1} 坐标 ({pt.x.toFixed(2)}, {pt.y.toFixed(2)}) 名称
+          <input
+            value={names[i]}
+            onChange={(e) => {
+              const next = [...names]
+              next[i] = e.target.value
+              setNames(next)
+            }}
+            type="text"
+          />
+        </label>
+      ))}
+      {points.length === 0 && <p className="hint">当前选择的两个图元没有交点。</p>}
+      <div className="modal-actions">
+        <button type="button" onClick={onCancel}>取消</button>
+        {points.length > 0 && (
+          <button type="button" className="primary" onClick={submit}>创建交点</button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ──────────── 圆弧：中心+半径+起止角度 ──────────── */
+
+type ArcCenterRadiusAnglesModalProps = {
+  open: boolean
+  center: Point | null
+  onConfirm: (center: Point, radius: number, startAngle: number, endAngle: number) => void
+  onCancel: () => void
+}
+
+function ArcCenterRadiusAnglesForm({
+  center,
+  onConfirm,
+  onCancel,
+}: {
+  center: Point
+  onConfirm: ArcCenterRadiusAnglesModalProps['onConfirm']
+  onCancel: () => void
+}) {
+  const [radius, setRadius] = useState('2')
+  const [startAngle, setStartAngle] = useState('0')
+  const [endAngle, setEndAngle] = useState('90')
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = () => {
+    const r = parseFlexibleNumber(radius)
+    const sa = parseFlexibleNumber(startAngle)
+    const ea = parseFlexibleNumber(endAngle)
+    if (Number.isNaN(r) || r <= 0) {
+      setError('请输入有效的正数半径。')
+      return
+    }
+    if (Number.isNaN(sa) || Number.isNaN(ea)) {
+      setError('请输入有效的起止角度（度）。')
+      return
+    }
+    if (sa === ea) {
+      setError('起始角和终止角不能相同。')
+      return
+    }
+    onConfirm(center, r, sa, ea)
+  }
+
+  return (
+    <div className="modal-panel" role="dialog" aria-labelledby="arc-cra-modal-title" onMouseDown={(e) => e.stopPropagation()}>
+      <h3 id="arc-cra-modal-title">圆弧（圆心 + 半径 + 角度）</h3>
+      <p className="hint">
+        TikZ 语法：<code>arc[start angle=α, end angle=β, radius=r]</code><br />
+        圆心：({center.x}, {center.y})。角度以正 x 轴为 0°，逆时针为正。
+      </p>
+      <label>
+        半径 r<input value={radius} onChange={(e) => setRadius(e.target.value)} type="text" inputMode="decimal" />
+      </label>
+      <label>
+        起始角（°）— 圆弧起始方向<input value={startAngle} onChange={(e) => setStartAngle(e.target.value)} type="text" inputMode="decimal" />
+      </label>
+      <label>
+        终止角（°）— 圆弧终止方向<input value={endAngle} onChange={(e) => setEndAngle(e.target.value)} type="text" inputMode="decimal" />
+      </label>
+      {error && <p className="modal-error">{error}</p>}
+      <div className="modal-actions">
+        <button type="button" onClick={onCancel}>取消</button>
+        <button type="button" className="primary" onClick={submit}>确定</button>
+      </div>
+    </div>
+  )
+}
+
+export function ArcCenterRadiusAnglesModal({ open, center, onConfirm, onCancel }: ArcCenterRadiusAnglesModalProps) {
+  if (!open || !center) return null
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <ArcCenterRadiusAnglesForm key={`${center.x},${center.y}`} center={center} onConfirm={onConfirm} onCancel={onCancel} />
+    </div>
+  )
+}
+
+export function IntersectionModal({ open, points, onConfirm, onCancel }: IntersectionModalProps) {
+  if (!open) return null
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <IntersectionForm key={points.length} points={points} onConfirm={onConfirm} onCancel={onCancel} />
+    </div>
+  )
+}
+
+export function CircleRadiusModal({ open, center, onConfirm, onCancel }: CircleRadiusModalProps) {
+  if (!open || !center) return null
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <CircleRadiusForm key={`${center.x},${center.y}`} center={center} onConfirm={onConfirm} onCancel={onCancel} />
+    </div>
+  )
+}
+
+/* ──────────── 椭圆：中心 + x/y 半轴数值 ──────────── */
+
+type EllipseRadiiModalProps = {
+  open: boolean
+  center: Point | null
+  onConfirm: (center: Point, xRadius: number, yRadius: number) => void
+  onCancel: () => void
+}
+
+function EllipseRadiiForm({
+  center,
+  onConfirm,
+  onCancel,
+}: {
+  center: Point
+  onConfirm: EllipseRadiiModalProps['onConfirm']
+  onCancel: () => void
+}) {
+  const [xRadius, setXRadius] = useState('3')
+  const [yRadius, setYRadius] = useState('2')
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = () => {
+    const xr = parseFlexibleNumber(xRadius)
+    const yr = parseFlexibleNumber(yRadius)
+    if (Number.isNaN(xr) || xr <= 0 || Number.isNaN(yr) || yr <= 0) {
+      setError('请输入有效的正数半轴。')
+      return
+    }
+    onConfirm(center, xr, yr)
+  }
+
+  return (
+    <div className="modal-panel" role="dialog" aria-labelledby="ellipse-radii-modal-title" onMouseDown={(e) => e.stopPropagation()}>
+      <h3 id="ellipse-radii-modal-title">椭圆（中心 + 两半轴）</h3>
+      <p className="hint">
+        中心：({center.x}, {center.y})。输入 x/y 半轴长度。
+      </p>
+      <label>
+        x 半轴 a
+        <input value={xRadius} onChange={(e) => setXRadius(e.target.value)} type="text" inputMode="decimal" />
+      </label>
+      <label>
+        y 半轴 b
+        <input value={yRadius} onChange={(e) => setYRadius(e.target.value)} type="text" inputMode="decimal" />
+      </label>
+      {error && <p className="modal-error">{error}</p>}
+      <div className="modal-actions">
+        <button type="button" onClick={onCancel}>取消</button>
+        <button type="button" className="primary" onClick={submit}>确定</button>
+      </div>
+    </div>
+  )
+}
+
+export function EllipseRadiiModal({ open, center, onConfirm, onCancel }: EllipseRadiiModalProps) {
+  if (!open || !center) return null
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <EllipseRadiiForm key={`${center.x},${center.y}`} center={center} onConfirm={onConfirm} onCancel={onCancel} />
+    </div>
+  )
+}
+
 export function LineSlopeModal({ open, anchor, onConfirm, onCancel }: LineSlopeModalProps) {
   if (!open || !anchor) {
     return null

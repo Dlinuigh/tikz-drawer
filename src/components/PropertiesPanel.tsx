@@ -3,15 +3,20 @@ import { ColorPicker } from './ColorPicker'
 import { formatNumber } from '../lib/geometry'
 import { parseFlexibleNumber } from '../lib/parseNumber'
 import type {
+  ArcSubtool,
   AxisNameTikzPlacement,
   AxisTickMark,
   AxesElement,
   ArrowHead,
+  CircleSubtool,
   DrawingElement,
   DrawingStyle,
+  EllipseSubtool,
   LineCap,
   LineJoin,
   LineStyle,
+  LineSubtool,
+  Tool,
 } from '../types/drawing'
 
 const AXIS_NAME_PLACEMENT_OPTIONS: Array<{ value: AxisNameTikzPlacement; label: string }> = [
@@ -351,10 +356,22 @@ function AxesTabs({
 }
 
 type PropertiesPanelProps = {
+  activeTool: Tool
+  lineSubtool: LineSubtool
+  circleSubtool: CircleSubtool
+  ellipseSubtool: EllipseSubtool
+  arcSubtool: ArcSubtool
+  arcAngle: number
+  currentStyle: DrawingStyle
   selectedElement: DrawingElement | null
+  onLineSubtoolChange: (sub: LineSubtool) => void
+  onCircleSubtoolChange: (sub: CircleSubtool) => void
+  onEllipseSubtoolChange: (sub: EllipseSubtool) => void
+  onArcSubtoolChange: (sub: ArcSubtool) => void
+  onArcAngleChange: (angle: number) => void
+  onStyleChange: (style: DrawingStyle) => void
   onUpdate: (element: DrawingElement) => void
   onDelete: (id: string) => void
-  onClose: () => void
 }
 
 const updateStyle = (element: DrawingElement, style: Partial<DrawingStyle>): DrawingElement => ({
@@ -373,20 +390,229 @@ const elementTypeLabel: Record<DrawingElement['type'], string> = {
   ellipse: '椭圆',
   polyline: '多段线',
   axes: '坐标轴',
+  point: '点',
 }
 
-export function PropertiesPanel({ selectedElement, onUpdate, onDelete, onClose }: PropertiesPanelProps) {
+const toolLabels: Record<Tool, string> = {
+  select: '选择',
+  line: '直线',
+  arc: '圆弧',
+  rectangle: '矩形',
+  circle: '圆',
+  ellipse: '椭圆',
+  polyline: '多段线',
+  axes: '坐标轴',
+  point: '点',
+  intersection: '交点',
+}
+
+
+
+export function PropertiesPanel({
+  activeTool,
+  lineSubtool,
+  circleSubtool,
+  ellipseSubtool,
+  arcSubtool,
+  arcAngle,
+  currentStyle,
+  selectedElement,
+  onLineSubtoolChange,
+  onCircleSubtoolChange,
+  onEllipseSubtoolChange,
+  onArcSubtoolChange,
+  onArcAngleChange,
+  onStyleChange,
+  onUpdate,
+  onDelete,
+}: PropertiesPanelProps) {
   if (!selectedElement) {
     return (
       <aside className="properties-panel">
         <div className="properties-header">
-          <h2>属性</h2>
-          <button className="compact" type="button" onClick={onClose}>
-            ✕
-          </button>
+          <h2>{toolLabels[activeTool]} 设置</h2>
         </div>
         <div className="properties-panel-scroll">
-          <p className="hint">用选择工具点击图形后，可以在这里修改箭头、线型、颜色和圆弧角度。</p>
+          {activeTool === 'line' && (
+            <label>
+              绘制方式
+              <select
+                value={lineSubtool}
+                onChange={(e) => onLineSubtoolChange(e.target.value as LineSubtool)}
+              >
+                <option value="twoPoints">两点</option>
+                <option value="pointSlope">点斜</option>
+              </select>
+            </label>
+          )}
+
+          {activeTool === 'circle' && (
+            <label>
+              绘制方式
+              <select
+                value={circleSubtool}
+                onChange={(e) => onCircleSubtoolChange(e.target.value as CircleSubtool)}
+              >
+                <option value="centerRadius">圆心+圆周点</option>
+                <option value="centerRadiusValue">圆心+半径数值</option>
+              </select>
+            </label>
+          )}
+
+          {activeTool === 'ellipse' && (
+            <label>
+              绘制方式
+              <select
+                value={ellipseSubtool}
+                onChange={(e) => onEllipseSubtoolChange(e.target.value as EllipseSubtool)}
+              >
+                <option value="centerRadii">中心+圆周点</option>
+                <option value="centerRadiiValue">中心+半轴数值</option>
+              </select>
+            </label>
+          )}
+
+          {activeTool === 'arc' && (
+            <>
+              <label>
+                绘制方式
+                <select
+                  value={arcSubtool}
+                  onChange={(e) => onArcSubtoolChange(e.target.value as ArcSubtool)}
+                >
+                  <option value="sweepAngle">两点+扫过角</option>
+                  <option value="centerRadiusAngles">圆心+半径+角度</option>
+                </select>
+              </label>
+              {arcSubtool === 'sweepAngle' && (
+                <label>
+                  圆弧角度（°）— 从起点到终点的扫过角
+                  <input
+                    type="number"
+                    min={-300}
+                    max={300}
+                    step={5}
+                    value={arcAngle}
+                    onChange={(e) => onArcAngleChange(Number(e.target.value))}
+                  />
+                </label>
+              )}
+              {arcSubtool === 'centerRadiusAngles' && (
+                <div className="hint">
+                  <p>点击画布设置圆心，然后在对话框中输入半径 r、起始角 α、终止角 β。</p>
+                  <p className="hint">TikZ 语法：<code>arc[start angle=α, end angle=β, radius=r]</code></p>
+                </div>
+              )}
+            </>
+          )}
+
+          {activeTool === 'select' && (
+            <p className="hint">点击画布上的图形可选中并编辑属性。</p>
+          )}
+
+          {activeTool === 'intersection' && (
+            <p className="hint">依次点击两个图元，系统将计算它们的交点并弹出命名对话框。</p>
+          )}
+
+          <hr />
+
+          <p className="field-group-title">默认线条样式</p>
+
+          <label>
+            起点箭头
+            <select
+              value={currentStyle.startArrow}
+              onChange={(e) => onStyleChange({ ...currentStyle, startArrow: e.target.value as ArrowHead })}
+            >
+              <option value="none">无</option>
+              <option value="Latex">Latex</option>
+              <option value="Stealth">Stealth</option>
+              <option value="Triangle">Triangle</option>
+            </select>
+          </label>
+
+          <label>
+            终点箭头
+            <select
+              value={currentStyle.endArrow}
+              onChange={(e) => onStyleChange({ ...currentStyle, endArrow: e.target.value as ArrowHead })}
+            >
+              <option value="none">无</option>
+              <option value="Latex">Latex</option>
+              <option value="Stealth">Stealth</option>
+              <option value="Triangle">Triangle</option>
+            </select>
+          </label>
+
+          <label>
+            线型
+            <select
+              value={currentStyle.lineStyle}
+              onChange={(e) => onStyleChange({ ...currentStyle, lineStyle: e.target.value as LineStyle })}
+            >
+              <option value="solid">实线</option>
+              <option value="dashed">虚线</option>
+              <option value="dotted">点线</option>
+              <option value="dash dot">点划线</option>
+            </select>
+          </label>
+
+          <label>
+            颜色
+            <ColorPicker
+              color={currentStyle.drawColor}
+              variant="presets"
+              onChange={(drawColor) => onStyleChange({ ...currentStyle, drawColor })}
+            />
+          </label>
+
+          <label>
+            线宽：{currentStyle.lineWidth}pt
+            <input
+              type="range"
+              min={0.2}
+              max={6}
+              step={0.1}
+              value={currentStyle.lineWidth}
+              onChange={(e) => onStyleChange({ ...currentStyle, lineWidth: Number(e.target.value) })}
+            />
+          </label>
+
+          <label>
+            line cap
+            <select
+              value={currentStyle.lineCap}
+              onChange={(e) => onStyleChange({ ...currentStyle, lineCap: e.target.value as LineCap })}
+            >
+              <option value="butt">butt</option>
+              <option value="round">round</option>
+              <option value="rect">rect</option>
+            </select>
+          </label>
+
+          <label>
+            line join
+            <select
+              value={currentStyle.lineJoin}
+              onChange={(e) => onStyleChange({ ...currentStyle, lineJoin: e.target.value as LineJoin })}
+            >
+              <option value="miter">miter</option>
+              <option value="round">round</option>
+              <option value="bevel">bevel</option>
+            </select>
+          </label>
+
+          <label>
+            opacity：{currentStyle.opacity}
+            <input
+              type="range"
+              min={0.1}
+              max={1}
+              step={0.05}
+              value={currentStyle.opacity}
+              onChange={(e) => onStyleChange({ ...currentStyle, opacity: Number(e.target.value) })}
+            />
+          </label>
         </div>
       </aside>
     )
@@ -396,9 +622,6 @@ export function PropertiesPanel({ selectedElement, onUpdate, onDelete, onClose }
     <aside className="properties-panel">
       <div className="properties-header">
         <h2>属性</h2>
-        <button className="compact" type="button" onClick={onClose}>
-          ✕
-        </button>
       </div>
       <div className="properties-panel-scroll">
       <p className="element-id">{elementTypeLabel[selectedElement.type]} · {selectedElement.id}</p>

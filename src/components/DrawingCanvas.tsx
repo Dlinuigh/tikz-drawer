@@ -12,10 +12,13 @@ import {
   tickMarkDisplayLabel,
   tickValuesInRange,
 } from '../lib/axes'
-import type { DraftElement, DrawingElement, DrawingStyle, GridConfig, LineSubtool, Point, Tool } from '../types/drawing'
+import type { ArcSubtool, CircleSubtool, DraftElement, DrawingElement, DrawingStyle, EllipseSubtool, GridConfig, LineSubtool, Point, Tool } from '../types/drawing'
 type DrawingCanvasProps = {
   activeTool: Tool
   lineSubtool: LineSubtool
+  arcSubtool: ArcSubtool
+  circleSubtool: CircleSubtool
+  ellipseSubtool: EllipseSubtool
   elements: DrawingElement[]
   draft: DraftElement | null
   selectedId: string | null
@@ -29,18 +32,32 @@ type DrawingCanvasProps = {
   onSelect: (id: string | null) => void
   onAxesOriginPick: (origin: Point) => void
   onLineSlopeAnchorPick: (anchor: Point) => void
+  onCircleRadiusCenterPick: (center: Point) => void
+  onEllipseRadiiCenterPick: (center: Point) => void
+  onArcCenterAnglesCenterPick: (center: Point) => void
+  onIntersectionElementPick: (elementId: string) => void
+  intersectionPickIds: string[]
 }
 
 const createId = () => crypto.randomUUID()
 
-const getSvgPoint = (event: MouseEvent<SVGSVGElement>, cs: CoordinateSystem): Point => {
-  const rect = event.currentTarget.getBoundingClientRect()
-  const scaleX = cs.width / rect.width
-  const scaleY = cs.height / rect.height
-
+const getSvgPoint = (event: MouseEvent<SVGSVGElement>, _cs: CoordinateSystem): Point => {
+  // 使用 SVG 原生 CTM（坐标变换矩阵）将屏幕坐标精确映射到 viewBox 坐标，
+  // 不受 CSS 缩放、viewBox 宽高比、窗口 resize 影响。
+  const svg = event.currentTarget
+  const pt = svg.createSVGPoint()
+  pt.x = event.clientX
+  pt.y = event.clientY
+  const ctm = svg.getScreenCTM()
+  if (ctm) {
+    const svgPt = pt.matrixTransform(ctm.inverse())
+    return { x: svgPt.x, y: svgPt.y }
+  }
+  // fallback：仅当 getScreenCTM() 不可用时
+  const rect = svg.getBoundingClientRect()
   return {
-    x: (event.clientX - rect.left) * scaleX,
-    y: (event.clientY - rect.top) * scaleY,
+    x: (event.clientX - rect.left) * (_cs.width / rect.width),
+    y: (event.clientY - rect.top) * (_cs.height / rect.height),
   }
 }
 
@@ -144,6 +161,9 @@ const axesEpsilon = 1e-9
 export function DrawingCanvas({
   activeTool,
   lineSubtool,
+  arcSubtool,
+  circleSubtool,
+  ellipseSubtool,
   elements,
   draft,
   selectedId,
@@ -157,6 +177,11 @@ export function DrawingCanvas({
   onSelect,
   onAxesOriginPick,
   onLineSlopeAnchorPick,
+  onCircleRadiusCenterPick,
+  onEllipseRadiiCenterPick,
+  onArcCenterAnglesCenterPick,
+  onIntersectionElementPick,
+  intersectionPickIds,
 }: DrawingCanvasProps) {
   const panLast = useRef<{ x: number; y: number } | null>(null)
   const skipNextClick = useRef(false)
@@ -194,10 +219,15 @@ export function DrawingCanvas({
       skipNextClick.current = false
       return
     }
-    const point = snapTikzPoint(svgToTikz(getSvgPoint(event, cs), cs), cs)
+    const point = snapTikzPoint(svgToTikz(getSvgPoint(event, cs), cs), cs, gridConfig.gridStep)
 
     if (activeTool === 'select') {
       onSelect(null)
+      return
+    }
+
+    if (activeTool === 'point') {
+      onCreate({ id: createId(), type: 'point', center: point, label: '', style: currentStyle })
       return
     }
 
@@ -208,6 +238,21 @@ export function DrawingCanvas({
 
     if (activeTool === 'line' && lineSubtool === 'pointSlope') {
       onLineSlopeAnchorPick(point)
+      return
+    }
+
+    if (activeTool === 'arc' && arcSubtool === 'centerRadiusAngles' && !draft) {
+      onArcCenterAnglesCenterPick(point)
+      return
+    }
+
+    if (activeTool === 'circle' && circleSubtool === 'centerRadiusValue' && !draft) {
+      onCircleRadiusCenterPick(point)
+      return
+    }
+
+    if (activeTool === 'ellipse' && ellipseSubtool === 'centerRadiiValue' && !draft) {
+      onEllipseRadiiCenterPick(point)
       return
     }
 
@@ -254,7 +299,7 @@ export function DrawingCanvas({
 
     onDraftChange({
       ...draft,
-      end: snapTikzPoint(svgToTikz(getSvgPoint(event, cs), cs), cs),
+      end: snapTikzPoint(svgToTikz(getSvgPoint(event, cs), cs), cs, gridConfig.gridStep),
       sweepAngle: draft.type === 'arc' ? arcAngle : draft.sweepAngle,
     })
   }
@@ -282,8 +327,18 @@ export function DrawingCanvas({
 
   const renderElement = (element: DrawingElement, isDraft = false) => {
     const selected = !isDraft && selectedId === element.id
+    const isIntersectionPick = !isDraft && activeTool === 'intersection' && intersectionPickIds.includes(element.id)
+    const handleElementClick = (event: MouseEvent) => {
+      event.stopPropagation()
+      if (activeTool === 'intersection' && !isDraft) {
+        onIntersectionElementPick(element.id)
+      } else {
+        onSelect(element.id)
+      }
+    }
+    const shapeClass = selected ? 'shape selected' : isIntersectionPick ? 'shape intersection-pick' : 'shape'
     const commonProps = {
-      className: selected ? 'shape selected' : 'shape',
+      className: shapeClass,
       opacity: element.style.opacity,
       stroke: element.style.drawColor,
       strokeLinecap: svgLineCap[element.style.lineCap],
@@ -306,10 +361,7 @@ export function DrawingCanvas({
           x2={end.x}
           y1={start.y}
           y2={end.y}
-          onClick={(event) => {
-            event.stopPropagation()
-            onSelect(element.id)
-          }}
+          onClick={handleElementClick}
         />
       )
     }
@@ -320,10 +372,7 @@ export function DrawingCanvas({
           key={element.id}
           {...commonProps}
           d={arcPath(element.start, element.end, element.sweepAngle, cs)}
-          onClick={(event) => {
-            event.stopPropagation()
-            onSelect(element.id)
-          }}
+          onClick={handleElementClick}
         />
       )
     }
@@ -340,10 +389,7 @@ export function DrawingCanvas({
           width={bounds.width}
           x={bounds.x}
           y={bounds.y}
-          onClick={(event) => {
-            event.stopPropagation()
-            onSelect(element.id)
-          }}
+          onClick={handleElementClick}
         />
       )
     }
@@ -359,10 +405,7 @@ export function DrawingCanvas({
           cy={center.y}
           fill="none"
           r={distance(element.center, element.radiusPoint) * cs.pixelsPerUnit}
-          onClick={(event) => {
-            event.stopPropagation()
-            onSelect(element.id)
-          }}
+          onClick={handleElementClick}
         />
       )
     }
@@ -380,10 +423,7 @@ export function DrawingCanvas({
           fill="none"
           rx={radii.rx}
           ry={radii.ry}
-          onClick={(event) => {
-            event.stopPropagation()
-            onSelect(element.id)
-          }}
+          onClick={handleElementClick}
         />
       )
     }
@@ -436,8 +476,7 @@ export function DrawingCanvas({
       }
 
       const handleSelectAxes = (event: MouseEvent) => {
-        event.stopPropagation()
-        onSelect(element.id)
+        handleElementClick(event)
       }
 
       const nodes: ReactNode[] = []
@@ -606,16 +645,44 @@ export function DrawingCanvas({
       )
     }
 
+    if (element.type === 'point') {
+      const center = tikzToSvg(element.center, cs)
+      return (
+        <g key={element.id} onClick={handleElementClick} style={{ cursor: 'pointer' }}>
+          <circle
+            cx={center.x}
+            cy={center.y}
+            fill={element.style.drawColor}
+            opacity={element.style.opacity}
+            r={4}
+            stroke={element.style.drawColor}
+            strokeWidth={element.style.lineWidth * 2}
+          />
+          {element.label && (
+            <text
+              className="shape-label"
+              dy="1em"
+              fill={element.style.drawColor}
+              fontSize={11}
+              opacity={element.style.opacity}
+              textAnchor="start"
+              x={center.x + 6}
+              y={center.y - 4}
+            >
+              {element.label}
+            </text>
+          )}
+        </g>
+      )
+    }
+
     return (
       <polyline
         key={element.id}
         {...commonProps}
         fill="none"
         points={element.points.map((point) => tikzToSvg(point, cs)).map((point) => `${point.x},${point.y}`).join(' ')}
-        onClick={(event) => {
-          event.stopPropagation()
-          onSelect(element.id)
-        }}
+        onClick={handleElementClick}
       />
     )
   }
@@ -637,13 +704,7 @@ export function DrawingCanvas({
 
   return (
     <div className="canvas-card">
-      {draft?.type === 'polyline' && (
-        <div className="canvas-header">
-          <button type="button" onClick={finishPolyline} disabled={(draft.points?.length ?? 0) < 2}>
-            完成多段线
-          </button>
-        </div>
-      )}
+      {/* 多段线用 Esc 完成（≥2 点提交）或取消（<2 点），不显示按钮 */}
       <svg
         className="drawing-canvas"
         height={cs.height}

@@ -1,4 +1,4 @@
-import type { ArcElement, AxesElement, CircleElement, DrawingElement, DrawingStyle, EllipseElement, GridConfig } from '../types/drawing'
+import type { ArcElement, AxesElement, CircleElement, DrawingElement, DrawingStyle, EllipseElement, GridConfig, Point, PointElement } from '../types/drawing'
 import { defaultGridConfig } from '../types/drawing'
 import {
   axesNameLabelOffset,
@@ -75,16 +75,37 @@ const lineToTikz = (element: DrawingElement): string => {
 }
 
 const arcToTikz = (element: ArcElement): string => {
-  const geometry = getArcGeometry(element.start, element.end, element.sweepAngle)
+  if (element.definitionMode === 'centerRadiusAngles' && element.center && element.startAngle !== undefined && element.endAngle !== undefined && element.radius !== undefined) {
+    // mode 2: 中心+半径+起止角度
+    const startAngle = element.startAngle
+    const endAngle = element.endAngle
+    // 计算起止点用于输出渲染
+    const toRad = (deg: number) => (deg * Math.PI) / 180
+    const computedStart: Point = {
+      x: element.center.x + element.radius * Math.cos(toRad(startAngle)),
+      y: element.center.y + element.radius * Math.sin(toRad(startAngle)),
+    }
+    return [
+      `% arc: 中心 (${formatNumber(element.center.x)}, ${formatNumber(element.center.y)}), 半径 ${formatNumber(element.radius)}`,
+      `%       起始角 ${formatNumber(startAngle)}°, 终止角 ${formatNumber(endAngle)}°`,
+      `\\draw${styleToTikzOptions(element.style)} ${pointToTikz(computedStart)}`,
+      `arc[start angle=${formatNumber(startAngle)}, end angle=${formatNumber(endAngle)}, radius=${formatNumber(element.radius)}];`,
+    ].join('\n')
+  }
 
+  // mode 1 (默认): 起点+终点+扫过角
+  const geometry = getArcGeometry(element.start, element.end, element.sweepAngle)
   if (!geometry) {
     return `% skipped invalid arc ${element.id}`
   }
 
   return [
+    `% arc: 起点 → 终点, 扫过 ${formatNumber(element.sweepAngle)}°`,
+    `%       圆心 (${formatNumber(geometry.center.x)}, ${formatNumber(geometry.center.y)}), 半径 ${formatNumber(geometry.radius)}`,
+    `%       起始角 ${formatNumber(geometry.startAngle)}°, 终止角 ${formatNumber(geometry.endAngle)}°`,
     `\\draw${styleToTikzOptions(element.style)} ${pointToTikz(element.start)}`,
     `arc[start angle=${formatNumber(geometry.startAngle)}, end angle=${formatNumber(geometry.endAngle)}, radius=${formatNumber(geometry.radius)}];`,
-  ].join(' ')
+  ].join('\n')
 }
 
 const rectangleToTikz = (element: DrawingElement): string => {
@@ -104,6 +125,9 @@ const ellipseToTikz = (element: EllipseElement): string => {
 
   return `\\draw${styleToTikzOptions(element.style)} ${pointToTikz(element.center)} ellipse[x radius=${formatNumber(xRadius)}, y radius=${formatNumber(yRadius)}];`
 }
+
+const pointToTikzElement = (element: PointElement): string =>
+  `\\draw${styleToTikzOptions(element.style)} ${pointToTikz(element.center)} node[circle, fill, inner sep=1.5pt, label={${element.label}}]{};`
 
 const polylineToTikz = (element: DrawingElement): string => {
   if (element.type !== 'polyline') {
@@ -197,25 +221,13 @@ const axesToTikz = (element: AxesElement): string => {
 }
 
 export const elementToTikz = (element: DrawingElement): string => {
-  if (element.type === 'line') {
-    return lineToTikz(element)
-  }
-  if (element.type === 'rectangle') {
-    return rectangleToTikz(element)
-  }
-  if (element.type === 'circle') {
-    return circleToTikz(element)
-  }
-  if (element.type === 'ellipse') {
-    return ellipseToTikz(element)
-  }
-  if (element.type === 'polyline') {
-    return polylineToTikz(element)
-  }
-  if (element.type === 'axes') {
-    return axesToTikz(element)
-  }
-
+  if (element.type === 'line') return lineToTikz(element)
+  if (element.type === 'rectangle') return rectangleToTikz(element)
+  if (element.type === 'circle') return circleToTikz(element)
+  if (element.type === 'ellipse') return ellipseToTikz(element)
+  if (element.type === 'polyline') return polylineToTikz(element)
+  if (element.type === 'axes') return axesToTikz(element)
+  if (element.type === 'point') return pointToTikzElement(element)
   return arcToTikz(element)
 }
 

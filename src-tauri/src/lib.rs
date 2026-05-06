@@ -176,6 +176,11 @@ fn try_gs(pdf: &Path, png_out: &Path) -> bool {
   false
 }
 
+#[tauri::command(rename_all = "camelCase")]
+fn read_file_binary(file_path: String) -> Result<Vec<u8>, String> {
+    fs::read(&file_path).map_err(|e| e.to_string())
+}
+
 /// Rasterize first PDF page to PNG next to the PDF (`drawing.png` in the same folder).
 #[tauri::command(rename_all = "camelCase")]
 fn rasterize_pdf_first_page(pdf_path: String) -> Result<String, String> {
@@ -217,38 +222,66 @@ pub fn run() {
         )?;
       }
 
-      // Build macOS native menu bar
-      let file_menu = SubmenuBuilder::new(app, "File")
-        .item(&MenuItemBuilder::with_id("new_canvas", "New Canvas").accelerator("CmdOrCtrl+N").build(app)?)
+      // App menu: About / Settings... / Quit
+      let app_sub = SubmenuBuilder::new(app, "TikZ Drawer")
+        .item(&MenuItemBuilder::with_id("about_tikz", "About TikZ Drawer").build(app)?)
         .separator()
-        .item(&MenuItemBuilder::with_id("export_pdf", "Export PDF...").accelerator("CmdOrCtrl+Shift+E").build(app)?)
-        .item(&MenuItemBuilder::with_id("export_png", "Export PNG...").build(app)?)
+        .item(&MenuItemBuilder::with_id("settings", "Settings…").accelerator("CmdOrCtrl+,").build(app)?)
         .separator()
         .quit()
         .build()?;
 
+      let file_menu = SubmenuBuilder::new(app, "File")
+        .item(&MenuItemBuilder::with_id("new_canvas", "New Canvas").accelerator("CmdOrCtrl+N").build(app)?)
+        .item(&MenuItemBuilder::with_id("save_project", "Save Project…").accelerator("CmdOrCtrl+S").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("export_tikz", "Export TikZ Code…").accelerator("CmdOrCtrl+Shift+C").build(app)?)
+        .item(&MenuItemBuilder::with_id("export_pdf", "Export PDF…").accelerator("CmdOrCtrl+Shift+E").build(app)?)
+        .build()?;
+
+      let edit_menu = SubmenuBuilder::new(app, "Edit")
+        .item(&MenuItemBuilder::with_id("undo", "Undo").accelerator("CmdOrCtrl+Z").build(app)?)
+        .item(&MenuItemBuilder::with_id("redo", "Redo").accelerator("CmdOrCtrl+Shift+Z").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("cut", "Cut").accelerator("CmdOrCtrl+X").build(app)?)
+        .item(&MenuItemBuilder::with_id("copy", "Copy").accelerator("CmdOrCtrl+C").build(app)?)
+        .item(&MenuItemBuilder::with_id("paste", "Paste").accelerator("CmdOrCtrl+V").build(app)?)
+        .build()?;
+
       let view_menu = SubmenuBuilder::new(app, "View")
         .item(&MenuItemBuilder::with_id("center_on_selection", "Center on Selection").build(app)?)
-        .item(&MenuItemBuilder::with_id("reset_view", "Reset Canvas View").build(app)?)
-        .build()?;
-
-      let grid_menu = SubmenuBuilder::new(app, "Grid")
-        .item(&MenuItemBuilder::with_id("grid_toggle_canvas", "Toggle Grid (Editor)").accelerator("CmdOrCtrl+G").build(app)?)
-        .item(&MenuItemBuilder::with_id("grid_toggle_export", "Toggle Grid in Export").build(app)?)
-        .item(&MenuItemBuilder::with_id("grid_settings", "Grid Settings…").build(app)?)
-        .build()?;
-
-      let compile_menu = SubmenuBuilder::new(app, "Compile")
+        .item(&MenuItemBuilder::with_id("reset_view", "Reset View").build(app)?)
+        .separator()
         .item(&MenuItemBuilder::with_id("compile", "Compile").accelerator("CmdOrCtrl+R").build(app)?)
         .item(&MenuItemBuilder::with_id("copy_code", "Copy TikZ Code").accelerator("CmdOrCtrl+Shift+C").build(app)?)
-        .item(&MenuItemBuilder::with_id("open_pdf", "Open PDF").build(app)?)
+        .item(&MenuItemBuilder::with_id("view_pdf", "Open PDF in System Viewer").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("grid_toggle_canvas", "Toggle Grid").accelerator("CmdOrCtrl+G").build(app)?)
+        .item(&MenuItemBuilder::with_id("grid_toggle_export", "Toggle Grid in Export").build(app)?)
+        .item(&MenuItemBuilder::with_id("grid_settings", "Grid Settings…").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("toggle_properties", "Toggle Properties Panel").build(app)?)
+        .item(&MenuItemBuilder::with_id("view_tikz", "Show TikZ Preview").build(app)?)
+        .build()?;
+
+      let window_menu = SubmenuBuilder::new(app, "Window")
+        .item(&MenuItemBuilder::with_id("minimize", "Minimize").accelerator("CmdOrCtrl+M").build(app)?)
+        .item(&MenuItemBuilder::with_id("zoom", "Zoom").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("bring_all_to_front", "Bring All to Front").build(app)?)
+        .build()?;
+
+      let help_menu = SubmenuBuilder::new(app, "Help")
+        .item(&MenuItemBuilder::with_id("help", "TikZ Drawer Help").build(app)?)
         .build()?;
 
       let menu = MenuBuilder::new(app)
+        .item(&app_sub)
         .item(&file_menu)
+        .item(&edit_menu)
         .item(&view_menu)
-        .item(&grid_menu)
-        .item(&compile_menu)
+        .item(&window_menu)
+        .item(&help_menu)
         .build()?;
 
       app.set_menu(menu)?;
@@ -259,8 +292,9 @@ pub fn run() {
         let id = event.id().0.as_str();
         match id {
           "new_canvas" => { let _ = handle.emit("menu-new-canvas", ()); }
+          "save_project" => { let _ = handle.emit("menu-save-project", ()); }
+          "export_tikz" => { let _ = handle.emit("menu-export-tikz", ()); }
           "export_pdf" => { let _ = handle.emit("menu-export-pdf", ()); }
-          "export_png" => { let _ = handle.emit("menu-export-png", ()); }
           "center_on_selection" => { let _ = handle.emit("menu-center-on-selection", ()); }
           "reset_view" => { let _ = handle.emit("menu-reset-view", ()); }
           "grid_toggle_canvas" => { let _ = handle.emit("menu-grid-toggle-canvas", ()); }
@@ -268,7 +302,10 @@ pub fn run() {
           "grid_settings" => { let _ = handle.emit("menu-grid-settings", ()); }
           "compile" => { let _ = handle.emit("menu-compile", ()); }
           "copy_code" => { let _ = handle.emit("menu-copy-code", ()); }
-          "open_pdf" => { let _ = handle.emit("menu-open-pdf", ()); }
+          "view_pdf" => { let _ = handle.emit("menu-open-pdf", ()); }
+          "toggle_properties" => { let _ = handle.emit("menu-toggle-properties", ()); }
+          "view_tikz" => { let _ = handle.emit("menu-toggle-tikz", ()); }
+          "settings" => { let _ = handle.emit("menu-settings", ()); }
           _ => {}
         }
       });
@@ -280,6 +317,7 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       compile_tikz,
       copy_path,
+      read_file_binary,
       rasterize_pdf_first_page,
     ])
     .run(tauri::generate_context!())

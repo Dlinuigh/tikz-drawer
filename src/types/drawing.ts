@@ -32,6 +32,9 @@ export const defaultGridConfig: GridConfig = {
 }
 
 export type LineSubtool = 'twoPoints' | 'pointSlope'
+export type ArcSubtool = 'sweepAngle' | 'centerRadiusAngles'
+export type CircleSubtool = 'centerRadius' | 'centerRadiusValue'
+export type EllipseSubtool = 'centerRadii' | 'centerRadiiValue'
 
 export type Tool =
   | 'select'
@@ -42,6 +45,8 @@ export type Tool =
   | 'ellipse'
   | 'polyline'
   | 'axes'
+  | 'intersection'
+  | 'point'
 
 export type ArrowHead = 'none' | 'Latex' | 'Stealth' | 'Triangle'
 
@@ -77,6 +82,13 @@ export type ArcElement = {
   end: Point
   sweepAngle: number
   style: DrawingStyle
+  /** 定义方式：'sweepAngle'（默认，用起点+终点+扫过角）| 'centerRadiusAngles'（圆心+半径+起止角度） */
+  definitionMode?: 'sweepAngle' | 'centerRadiusAngles'
+  /** 当 definitionMode === 'centerRadiusAngles' 时使用 */
+  center?: Point
+  startAngle?: number
+  endAngle?: number
+  radius?: number
 }
 
 export type RectangleElement = {
@@ -107,6 +119,14 @@ export type PolylineElement = {
   id: string
   type: 'polyline'
   points: Point[]
+  style: DrawingStyle
+}
+
+export type PointElement = {
+  id: string
+  type: 'point'
+  center: Point
+  label: string
   style: DrawingStyle
 }
 
@@ -165,9 +185,10 @@ export type DrawingElement =
   | EllipseElement
   | PolylineElement
   | AxesElement
+  | PointElement
 
 export type DraftElement = {
-  type: 'line' | 'arc' | 'rectangle' | 'circle' | 'ellipse' | 'polyline'
+  type: 'line' | 'arc' | 'rectangle' | 'circle' | 'ellipse' | 'polyline' | 'point'
   start: Point
   end: Point
   points?: Point[]
