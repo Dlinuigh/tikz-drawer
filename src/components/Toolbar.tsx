@@ -16,22 +16,22 @@ type ToolbarProps = {
 
 const primaryTools: Array<{ value: Tool; label: string; submenu?: 'line' | 'arc' | 'circle' | 'ellipse' }> = [
   { value: 'select', label: '选择' },
+  { value: 'point', label: '点' },
   { value: 'line', label: '直线', submenu: 'line' },
-  { value: 'arc', label: '圆弧', submenu: 'arc' },
   { value: 'rectangle', label: '矩形' },
   { value: 'circle', label: '圆', submenu: 'circle' },
   { value: 'ellipse', label: '椭圆', submenu: 'ellipse' },
   { value: 'polyline', label: '多段线' },
   { value: 'polygon', label: '多边形' },
+  { value: 'arc', label: '圆弧', submenu: 'arc' },
   { value: 'sector', label: '扇形' },
   { value: 'regularPolygon', label: '正多边形' },
+  { value: 'axes', label: '坐标轴' },
+  { value: 'intersection', label: '交点' },
+  { value: 'fillPick', label: '填色' },
   { value: 'conic', label: '圆锥曲线' },
   { value: 'plot', label: '函数图' },
   { value: 'foreach', label: 'Foreach' },
-  { value: 'fillPick', label: '填色' },
-  { value: 'axes', label: '坐标轴' },
-  { value: 'point', label: '点' },
-  { value: 'intersection', label: '交点' },
 ]
 
 const lineSubtools: Array<{ value: LineSubtool; label: string }> = [

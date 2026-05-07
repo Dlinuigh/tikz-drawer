@@ -17,6 +17,9 @@ All notable changes to TikZ Drawer will be documented in this file.
 
 ### Changed
 
+- **画布**：左侧浮动栏在工具栏下方常驻「交点分割」「合并填充」按钮（与属性栏逻辑相同的启用条件）；分割/合并失败时用简短 toast 提示。
+- **样式**：新建矩形、圆、椭圆、多边形、正多边形、扇形时默认套用浅色实心填充（保留当前描边等其余样式）。
+- **工具栏**：主工具列表按由简到繁重排（选择 → 点 → 直线 → … → Foreach）。
 - **ESLint**：`globalIgnores` 排除 `src-tauri/target`（避免扫描 Tauri 构建产物）；为 `App.tsx`、`DrawingCanvas.tsx` 关闭 `react-hooks/refs` 与 `react-hooks/set-state-in-effect`（与原生菜单 ref 同步及 PDF blob 生命周期一致），保证云端 `npm run lint` 稳定通过。
 
 ## 0.1.0 - 2026-05-06

@@ -52,7 +52,13 @@ import type {
   Point,
   Tool,
 } from './types/drawing'
-import { defaultAxisLineOptionsFor, defaultGridConfig, defaultStyle, normalizeDrawingStyle } from './types/drawing'
+import {
+  defaultAxisLineOptionsFor,
+  defaultGridConfig,
+  defaultStyle,
+  normalizeDrawingStyle,
+  withClosedShapeDefaultFillIfApplicable,
+} from './types/drawing'
 
 const createId = () => crypto.randomUUID()
 
@@ -172,7 +178,11 @@ function App() {
     if (!target || (target.type !== 'line' && target.type !== 'polyline' && target.type !== 'arc')) return
     const markers = elements.filter((e) => e.type === 'intersectionPoint').map((e) => e.center)
     const parts = splitElementAtIntersectionMarkers(target, markers)
-    if (!parts?.length) return
+    if (!parts?.length) {
+      setCopyHint('无可分割：请确保画布上有交点标记且落在该图元上')
+      window.setTimeout(() => setCopyHint(null), 2800)
+      return
+    }
     purgeIntersectionPairsForId(id)
     setElements((els) => [...els.filter((e) => e.id !== id), ...parts])
     setSelectedIds(parts.map((p) => p.id))
@@ -183,7 +193,11 @@ function App() {
       .map((i) => elements.find((e) => e.id === i))
       .filter(Boolean) as DrawingElement[]
     const ring = cycleFromSelectedLines(sel)
-    if (!ring) return
+    if (!ring) {
+      setCopyHint('无法合并：请 Shift 多选至少 3 条直线且构成单一闭合回路')
+      window.setTimeout(() => setCopyHint(null), 2800)
+      return
+    }
     const el: DrawingElement = {
       id: createId(),
       type: 'filledPath',
@@ -193,6 +207,23 @@ function App() {
     setElements((els) => [...els, el])
     setSelectedIds([el.id])
   }, [selectedIds, elements, currentStyle])
+
+  const commitNewElement = useCallback((element: DrawingElement) => {
+    const patched = withClosedShapeDefaultFillIfApplicable(element)
+    setElements((currentElements) => [...currentElements, patched])
+    setSelectedIds([patched.id])
+  }, [])
+
+  const canSplitAtIntersection = useMemo(() => {
+    if (selectedIds.length !== 1 || !selectedElement) return false
+    const t = selectedElement.type
+    return t === 'line' || t === 'polyline' || t === 'arc'
+  }, [selectedIds.length, selectedElement])
+
+  const canMergeCycleToFill = useMemo(() => {
+    if (selectedIds.length < 3) return false
+    return selectedIds.every((id) => elements.find((e) => e.id === id)?.type === 'line')
+  }, [selectedIds, elements])
 
   const toggleAxisCanvasOrientation = useCallback((orientation: 'x' | 'y') => {
     setElements((els) => toggleAxisOrientationVisibility(els, orientation))
@@ -580,8 +611,7 @@ function App() {
             radiusPoint: { x: center.x + radius, y: center.y },
             style: currentStyle,
           }
-          setElements((currentElements) => [...currentElements, element])
-          setSelectedIds([element.id])
+          commitNewElement(element)
           setCircleRadiusCenter(null)
         }}
       />
@@ -598,8 +628,7 @@ function App() {
             radiusPoint: { x: center.x + xRadius, y: center.y + yRadius },
             style: currentStyle,
           }
-          setElements((currentElements) => [...currentElements, element])
-          setSelectedIds([element.id])
+          commitNewElement(element)
           setEllipseRadiiCenter(null)
         }}
       />
@@ -738,6 +767,26 @@ function App() {
                     }
                   }}
                 />
+                <div className="canvas-toolbar-actions">
+                  <button
+                    className="canvas-toolbar-action-btn"
+                    disabled={!canSplitAtIntersection}
+                    title="选中一条直线、多段线或圆弧；需先有落在其上的交点标记"
+                    type="button"
+                    onClick={() => splitAtIntersectionMarkers()}
+                  >
+                    交点分割
+                  </button>
+                  <button
+                    className="canvas-toolbar-action-btn"
+                    disabled={!canMergeCycleToFill}
+                    title="Shift 多选至少 3 条直线构成单一闭合回路后合并为填充区域（可先交点分割）"
+                    type="button"
+                    onClick={() => mergeCycleToFilledPath()}
+                  >
+                    合并填充
+                  </button>
+                </div>
               </div>
               <DrawingCanvas
                 activeTool={activeTool}
@@ -751,10 +800,7 @@ function App() {
                 elements={elements}
                 gridConfig={gridConfig}
                 lineSubtool={lineSubtool}
-                onCreate={(element) => {
-                  setElements((currentElements) => [...currentElements, element])
-                  setSelectedIds([element.id])
-                }}
+                onCreate={commitNewElement}
                 onDraftChange={setDraft}
                 onLineSlopeAnchorPick={(anchor) => setLineSlopeAnchor(anchor)}
                 onCircleRadiusCenterPick={(center) => setCircleRadiusCenter(center)}
@@ -951,8 +997,7 @@ function App() {
             sides,
             style: currentStyle,
           }
-          setElements((els) => [...els, el])
-          setSelectedIds([el.id])
+          commitNewElement(el)
           setRegularPolygonCorners(null)
         }}
       />

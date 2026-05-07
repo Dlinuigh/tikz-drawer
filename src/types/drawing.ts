@@ -388,6 +388,30 @@ export function normalizeDrawingStyle(s: Partial<DrawingStyle>): DrawingStyle {
   return { ...defaultStyle, ...s }
 }
 
+/** 原生闭合图元创建时使用浅色实心填充（保留描边等其余样式字段）。 */
+export function withClosedShapeDefaultFill(style: DrawingStyle): DrawingStyle {
+  return {
+    ...style,
+    fillMode: 'solid',
+    fillOpacity: 1,
+    fillColor: defaultStyle.fillColor,
+  }
+}
+
+export function withClosedShapeDefaultFillIfApplicable(el: DrawingElement): DrawingElement {
+  switch (el.type) {
+    case 'rectangle':
+    case 'circle':
+    case 'ellipse':
+    case 'polygon':
+    case 'regularPolygon':
+    case 'sector':
+      return { ...el, style: withClosedShapeDefaultFill(el.style) }
+    default:
+      return el
+  }
+}
+
 export const presetColors = ['#111827', '#dc2626', '#2563eb', '#16a34a', '#ea580c', '#7c3aed']
 
 export const defaultAxesOptions: Pick<
