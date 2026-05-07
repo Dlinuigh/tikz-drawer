@@ -1,5 +1,6 @@
 import { sampleConicCurve } from './conicSamples'
 import { sampleFunctionPlot } from './plotSamples'
+import { ccwSweepDegrees } from './sectorAngles'
 import type {
   DrawingElement,
   Point,
@@ -498,7 +499,7 @@ function appendSector(el: SectorElement, info: IntersectInfo): void {
   info.arcs.push({
     start: p0,
     end: p1,
-    sweepAngle: el.endAngleDeg - el.startAngleDeg,
+    sweepAngle: ccwSweepDegrees(el.startAngleDeg, el.endAngleDeg),
   })
 }
 

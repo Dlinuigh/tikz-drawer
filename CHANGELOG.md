@@ -17,6 +17,7 @@ All notable changes to TikZ Drawer will be documented in this file.
 
 ### Changed
 
+- **扇形**：画布 SVG 弧与 TikZ 一致，按起始角到终止角的逆时针扫角（含环绕 ±180°、优弧）；`largeArc`/`sweep` 标志与通用圆弧绘制一致。求交时扇形边界弧使用同一 CCW 扫角，交点与弧线分割更易对齐；填色拾取楔区域与上述角度语义一致（`sectorAngles` / `sectorGeometry`）。
 - **画布**：闭合图元填充在 SVG 预览中可见（移除 `.shape` 的全局 `fill:none` 覆盖；圆弧路径显式 `fill="none"`）；`.shape` 使用 `pointer-events: painted` 以便点击填充区域即可选中。
 - **选择**：选择工具下在画布空白处（背景/网格/坐标轴线）拖拽可进行框选；与包围盒相交的图元入选，`Shift` 为追加并集。
 - **画布**：左侧浮动栏在工具栏下方常驻「交点分割」「合并填充」按钮（与属性栏逻辑相同的启用条件）；分割/合并失败时用简短 toast 提示。

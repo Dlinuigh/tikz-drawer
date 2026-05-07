@@ -210,6 +210,7 @@ const filledPathToTikz = (element: DrawingElement): string => {
   return `${cmd}${closedOrDrawOpts(element.style)} ${pts} -- cycle;`
 }
 
+/** 扇形弧与画布一致：从 start angle 逆时针到 end angle（可为优弧）。 */
 const sectorToTikz = (element: DrawingElement): string => {
   if (element.type !== 'sector') return ''
   const { center, radius, startAngleDeg, endAngleDeg } = element

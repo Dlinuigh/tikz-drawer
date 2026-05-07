@@ -1,6 +1,7 @@
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { expandForeachList } from '../lib/foreachExpand'
+import { sectorPathD } from '../lib/sectorGeometry'
 import type { CoordinateSystem } from '../lib/geometry'
 import {
   distance,
@@ -101,32 +102,6 @@ const arcPath = (start: Point, end: Point, sweepAngle: number, cs: CoordinateSys
   const sweepFlag = sweepAngle > 0 ? 0 : 1
 
   return `M ${startSvg.x} ${startSvg.y} A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${endSvg.x} ${endSvg.y}`
-}
-
-const sectorPathSvg = (
-  center: Point,
-  radius: number,
-  startDeg: number,
-  endDeg: number,
-  coord: CoordinateSystem,
-): string => {
-  const toRad = (d: number) => (d * Math.PI) / 180
-  const p0 = {
-    x: center.x + radius * Math.cos(toRad(startDeg)),
-    y: center.y + radius * Math.sin(toRad(startDeg)),
-  }
-  const p1 = {
-    x: center.x + radius * Math.cos(toRad(endDeg)),
-    y: center.y + radius * Math.sin(toRad(endDeg)),
-  }
-  const sweep = endDeg - startDeg
-  const svg0 = tikzToSvg(p0, coord)
-  const svg1 = tikzToSvg(p1, coord)
-  const c = tikzToSvg(center, coord)
-  const rpx = radius * coord.pixelsPerUnit
-  const largeArcFlag = Math.abs(sweep) > 180 ? 1 : 0
-  const sweepFlag = sweep > 0 ? 1 : 0
-  return `M ${c.x} ${c.y} L ${svg0.x} ${svg0.y} A ${rpx} ${rpx} 0 ${largeArcFlag} ${sweepFlag} ${svg1.x} ${svg1.y} Z`
 }
 
 const rectangleBounds = (start: Point, end: Point, cs: CoordinateSystem) => {
@@ -1164,13 +1139,7 @@ export function DrawingCanvas({
 
     if (element.type === 'sector') {
       const fs = svgFillStrokePreview(element.style)
-      const d = sectorPathSvg(
-        element.center,
-        element.radius,
-        element.startAngleDeg,
-        element.endAngleDeg,
-        cs,
-      )
+      const d = sectorPathD(element.center, element.radius, element.startAngleDeg, element.endAngleDeg, cs)
       return (
         <path
           key={element.id}

@@ -1,4 +1,5 @@
 import { distance } from './geometry'
+import { ccwDistanceToRay, ccwSweepDegrees } from './sectorAngles'
 import type {
   CircleElement,
   DrawingElement,
@@ -76,23 +77,10 @@ export function hitClosedShapeAtPoint(
       const s = el as SectorElement
       const d = distance(pt, s.center)
       if (d > s.radius + 1e-6) continue
-      let a = (Math.atan2(pt.y - s.center.y, pt.x - s.center.x) * 180) / Math.PI
-      const a0 = s.startAngleDeg
-      const a1 = s.endAngleDeg
-      const norm = (t: number) => {
-        let x = t
-        while (x < 0) x += 360
-        while (x >= 360) x -= 360
-        return x
-      }
-      a = norm(a)
-      const s0 = norm(a0)
-      const s1 = norm(a1)
-      const between =
-        s1 >= s0
-          ? a >= s0 - 1e-6 && a <= s1 + 1e-6
-          : a >= s0 - 1e-6 || a <= s1 + 1e-6
-      if (between) return el
+      const a = (Math.atan2(pt.y - s.center.y, pt.x - s.center.x) * 180) / Math.PI
+      const δ = ccwSweepDegrees(s.startAngleDeg, s.endAngleDeg)
+      const δp = ccwDistanceToRay(s.startAngleDeg, a)
+      if (δ >= 360 - 1e-6 || δp <= δ + 1e-6) return el
     } else if (el.type === 'regularPolygon') {
       const rp = el as RegularPolygonElement
       const verts = regularVerts(rp.center, rp.firstVertex, rp.sides)
