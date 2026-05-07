@@ -44,6 +44,13 @@ export type Tool =
   | 'circle'
   | 'ellipse'
   | 'polyline'
+  | 'polygon'
+  | 'sector'
+  | 'regularPolygon'
+  | 'conic'
+  | 'plot'
+  | 'foreach'
+  | 'fillPick'
   | 'axes'
   | 'intersection'
   | 'point'
@@ -56,6 +63,16 @@ export type LineCap = 'butt' | 'round' | 'rect'
 
 export type LineJoin = 'miter' | 'round' | 'bevel'
 
+export type FillMode = 'none' | 'solid' | 'pattern'
+
+/** TikZ `patterns` library names (subset). */
+export type FillPatternName =
+  | 'horizontal lines'
+  | 'vertical lines'
+  | 'north east lines'
+  | 'dots'
+  | 'grid'
+
 export type DrawingStyle = {
   startArrow: ArrowHead
   endArrow: ArrowHead
@@ -65,7 +82,21 @@ export type DrawingStyle = {
   lineCap: LineCap
   lineJoin: LineJoin
   opacity: number
+  fillMode: FillMode
+  fillColor: string
+  fillOpacity: number
+  fillPattern: FillPatternName
 }
+
+export type CoordinateInputMode = 'cartesian' | 'polar'
+
+export type PolarAngleUnit = 'deg' | 'rad'
+
+export type PlotCoordinateMode = 'cartesian' | 'polar'
+
+export type ConicKind = 'parabola' | 'ellipse' | 'hyperbola'
+
+export type HyperbolaBranch = 'positive' | 'negative' | 'both'
 
 export type LineElement = {
   id: string
@@ -119,6 +150,89 @@ export type PolylineElement = {
   id: string
   type: 'polyline'
   points: Point[]
+  /** When true, TikZ ends with `-- cycle` and SVG fills closed region if fill set */
+  closed?: boolean
+  style: DrawingStyle
+}
+
+/** Circular sector (pie wedge): center, radius, angles in degrees (CCW, TikZ-like). */
+export type SectorElement = {
+  id: string
+  type: 'sector'
+  center: Point
+  radius: number
+  startAngleDeg: number
+  endAngleDeg: number
+  style: DrawingStyle
+}
+
+/** Regular n-gon inscribed in circle through first vertex. */
+export type RegularPolygonElement = {
+  id: string
+  type: 'regularPolygon'
+  center: Point
+  /** Any vertex; radius = distance(center, firstVertex) */
+  firstVertex: Point
+  sides: number
+  style: DrawingStyle
+}
+
+/** Closed polygon (distinct from open polyline). */
+export type PolygonElement = {
+  id: string
+  type: 'polygon'
+  vertices: Point[]
+  style: DrawingStyle
+}
+
+/** Sampled conic in standard orientation then rotated around center. */
+export type ConicCurveElement = {
+  id: string
+  type: 'conicCurve'
+  conicKind: ConicKind
+  center: Point
+  semiAxisX: number
+  semiAxisY: number
+  rotationDeg: number
+  domainMin: number
+  domainMax: number
+  samples: number
+  hyperbolaBranch: HyperbolaBranch
+  style: DrawingStyle
+}
+
+/** Ordered vertices of a filled region (from edge merge or click tool). */
+export type FilledPathElement = {
+  id: string
+  type: 'filledPath'
+  vertices: Point[]
+  style: DrawingStyle
+}
+
+export type FunctionPlotElement = {
+  id: string
+  type: 'functionPlot'
+  /** Explicit y=f(x) or r=f(θ); use `coordinateMode` */
+  expression: string
+  coordinateMode: PlotCoordinateMode
+  domainMin: number
+  domainMax: number
+  samples: number
+  /** Optional implicit F(x,y)=0 (very small MVP contour); when set, explicit fields ignored for sampling */
+  implicitEquation: string | null
+  style: DrawingStyle
+}
+
+export type TikzForeachElement = {
+  id: string
+  type: 'tikzForeach'
+  /** Iterator macro without backslash, e.g. `i` → `\\i` in export */
+  iteratorName: string
+  /** TikZ list expression: `1,...,10` or `{a,b,c}` */
+  listExpr: string
+  /** Body inside braces in export; use `#1` as iterator placeholder for simple previews */
+  bodyTemplate: string
+  previewLimit: number
   style: DrawingStyle
 }
 
@@ -219,17 +333,38 @@ export type DrawingElement =
   | CircleElement
   | EllipseElement
   | PolylineElement
+  | PolygonElement
+  | SectorElement
+  | RegularPolygonElement
+  | ConicCurveElement
+  | FilledPathElement
+  | FunctionPlotElement
+  | TikzForeachElement
   | AxesElement
   | AxisLineElement
   | PointElement
   | IntersectionPointElement
 
 export type DraftElement = {
-  type: 'line' | 'arc' | 'rectangle' | 'circle' | 'ellipse' | 'polyline' | 'point'
+  type:
+    | 'line'
+    | 'arc'
+    | 'rectangle'
+    | 'circle'
+    | 'ellipse'
+    | 'polyline'
+    | 'polygon'
+    | 'sector'
+    | 'regularPolygon'
+    | 'point'
   start: Point
   end: Point
   points?: Point[]
   sweepAngle?: number
+  /** sector / regularPolygon draft steps */
+  phase?: 'center' | 'radius' | 'secondAngle'
+  /** regular polygon: sides from modal */
+  regularSides?: number
   style: DrawingStyle
 }
 
@@ -242,6 +377,15 @@ export const defaultStyle: DrawingStyle = {
   lineCap: 'round',
   lineJoin: 'round',
   opacity: 1,
+  fillMode: 'none',
+  fillColor: '#93c5fd',
+  fillOpacity: 1,
+  fillPattern: 'north east lines',
+}
+
+/** Merge partial style from older saved data or patches. */
+export function normalizeDrawingStyle(s: Partial<DrawingStyle>): DrawingStyle {
+  return { ...defaultStyle, ...s }
 }
 
 export const presetColors = ['#111827', '#dc2626', '#2563eb', '#16a34a', '#ea580c', '#7c3aed']

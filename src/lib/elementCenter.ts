@@ -1,5 +1,6 @@
 import type { DrawingElement, Point } from '../types/drawing'
-
+import { sampleConicCurve } from './conicSamples'
+import { sampleFunctionPlot } from './plotSamples'
 /** Approximate center in TikZ coordinates (for framing the view). */
 export const tikzCenterOfElement = (e: DrawingElement): Point | null => {
   switch (e.type) {
@@ -18,6 +19,34 @@ export const tikzCenterOfElement = (e: DrawingElement): Point | null => {
       const sy = pts.reduce((a, p) => a + p.y, 0) / pts.length
       return { x: sx, y: sy }
     }
+    case 'polygon':
+    case 'filledPath': {
+      const pts = e.vertices
+      if (pts.length === 0) return null
+      const sx = pts.reduce((a, p) => a + p.x, 0) / pts.length
+      const sy = pts.reduce((a, p) => a + p.y, 0) / pts.length
+      return { x: sx, y: sy }
+    }
+    case 'sector':
+      return { ...e.center }
+    case 'regularPolygon':
+      return { ...e.center }
+    case 'conicCurve': {
+      const pts = sampleConicCurve(e)
+      if (!pts.length) return { ...e.center }
+      const sx = pts.reduce((a, p) => a + p.x, 0) / pts.length
+      const sy = pts.reduce((a, p) => a + p.y, 0) / pts.length
+      return { x: sx, y: sy }
+    }
+    case 'functionPlot': {
+      const pts = sampleFunctionPlot(e)
+      if (!pts.length) return { x: e.domainMin, y: 0 }
+      const sx = pts.reduce((a, p) => a + p.x, 0) / pts.length
+      const sy = pts.reduce((a, p) => a + p.y, 0) / pts.length
+      return { x: sx, y: sy }
+    }
+    case 'tikzForeach':
+      return { x: 0, y: 0 }
     case 'axes':
       return { ...e.origin }
     case 'axisLine': {

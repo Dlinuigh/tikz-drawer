@@ -1,7 +1,18 @@
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { useCallback, useEffect, useRef } from 'react'
+import { expandForeachList } from '../lib/foreachExpand'
 import type { CoordinateSystem } from '../lib/geometry'
-import { distance, getArcGeometry, snapTikzPoint, svgToTikz, tikzToSvg } from '../lib/geometry'
+import {
+  distance,
+  getArcGeometry,
+  regularPolygonVertices,
+  snapTikzPoint,
+  svgToTikz,
+  tikzToSvg,
+} from '../lib/geometry'
+import { sampleConicCurve } from '../lib/conicSamples'
+import { sampleFunctionPlot } from '../lib/plotSamples'
+import { svgFillStrokePreview } from '../lib/styleHelpers'
 import {
   axesNameLabelOffset,
   axesTickHalfLength,
@@ -12,7 +23,18 @@ import {
   tickMarkDisplayLabel,
   tickValuesInRange,
 } from '../lib/axes'
-import type { ArcSubtool, CircleSubtool, DraftElement, DrawingElement, DrawingStyle, EllipseSubtool, GridConfig, LineSubtool, Point, Tool } from '../types/drawing'
+import type {
+  ArcSubtool,
+  CircleSubtool,
+  DraftElement,
+  DrawingElement,
+  DrawingStyle,
+  EllipseSubtool,
+  GridConfig,
+  LineSubtool,
+  Point,
+  Tool,
+} from '../types/drawing'
 type DrawingCanvasProps = {
   activeTool: Tool
   lineSubtool: LineSubtool
@@ -21,7 +43,8 @@ type DrawingCanvasProps = {
   ellipseSubtool: EllipseSubtool
   elements: DrawingElement[]
   draft: DraftElement | null
-  selectedId: string | null
+  selectedIds: string[]
+  polylineClosed: boolean
   currentStyle: DrawingStyle
   arcAngle: number
   gridConfig: GridConfig
@@ -29,7 +52,9 @@ type DrawingCanvasProps = {
   onViewOriginChange: (origin: Point) => void
   onCreate: (element: DrawingElement) => void
   onDraftChange: (draft: DraftElement | null) => void
-  onSelect: (id: string | null) => void
+  onSelect: (id: string | null, additive?: boolean) => void
+  onFillPick?: (point: Point) => void
+  onRegularPolygonTwoPoints?: (center: Point, firstVertex: Point) => void
   onLineSlopeAnchorPick: (anchor: Point) => void
   onCircleRadiusCenterPick: (center: Point) => void
   onEllipseRadiiCenterPick: (center: Point) => void
@@ -74,6 +99,32 @@ const arcPath = (start: Point, end: Point, sweepAngle: number, cs: CoordinateSys
   const sweepFlag = sweepAngle > 0 ? 0 : 1
 
   return `M ${startSvg.x} ${startSvg.y} A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${endSvg.x} ${endSvg.y}`
+}
+
+const sectorPathSvg = (
+  center: Point,
+  radius: number,
+  startDeg: number,
+  endDeg: number,
+  coord: CoordinateSystem,
+): string => {
+  const toRad = (d: number) => (d * Math.PI) / 180
+  const p0 = {
+    x: center.x + radius * Math.cos(toRad(startDeg)),
+    y: center.y + radius * Math.sin(toRad(startDeg)),
+  }
+  const p1 = {
+    x: center.x + radius * Math.cos(toRad(endDeg)),
+    y: center.y + radius * Math.sin(toRad(endDeg)),
+  }
+  const sweep = endDeg - startDeg
+  const svg0 = tikzToSvg(p0, coord)
+  const svg1 = tikzToSvg(p1, coord)
+  const c = tikzToSvg(center, coord)
+  const rpx = radius * coord.pixelsPerUnit
+  const largeArcFlag = Math.abs(sweep) > 180 ? 1 : 0
+  const sweepFlag = sweep > 0 ? 1 : 0
+  return `M ${c.x} ${c.y} L ${svg0.x} ${svg0.y} A ${rpx} ${rpx} 0 ${largeArcFlag} ${sweepFlag} ${svg1.x} ${svg1.y} Z`
 }
 
 const rectangleBounds = (start: Point, end: Point, cs: CoordinateSystem) => {
@@ -165,7 +216,8 @@ export function DrawingCanvas({
   ellipseSubtool,
   elements,
   draft,
-  selectedId,
+  selectedIds,
+  polylineClosed,
   currentStyle,
   arcAngle,
   gridConfig,
@@ -174,6 +226,8 @@ export function DrawingCanvas({
   onCreate,
   onDraftChange,
   onSelect,
+  onFillPick,
+  onRegularPolygonTwoPoints,
   onLineSlopeAnchorPick,
   onCircleRadiusCenterPick,
   onEllipseRadiiCenterPick,
@@ -192,7 +246,27 @@ export function DrawingCanvas({
       return
     }
 
-    onCreate({ id: createId(), type: 'polyline', points: d.points, style: d.style })
+    onCreate({
+      id: createId(),
+      type: 'polyline',
+      points: d.points,
+      style: d.style,
+      closed: polylineClosed,
+    })
+    onDraftChange(null)
+  }, [onCreate, onDraftChange, polylineClosed])
+
+  const finishPolygon = useCallback(() => {
+    const d = draftRef.current
+    if (d?.type !== 'polygon' || !d.points || d.points.length < 3) {
+      return
+    }
+    onCreate({
+      id: createId(),
+      type: 'polygon',
+      vertices: d.points,
+      style: d.style,
+    })
     onDraftChange(null)
   }, [onCreate, onDraftChange])
 
@@ -200,17 +274,27 @@ export function DrawingCanvas({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       const d = draftRef.current
-      if (d?.type !== 'polyline') return
-      e.preventDefault()
-      if ((d.points?.length ?? 0) >= 2) {
-        finishPolyline()
-      } else {
-        onDraftChange(null)
+      if (d?.type === 'polyline') {
+        e.preventDefault()
+        if ((d.points?.length ?? 0) >= 2) {
+          finishPolyline()
+        } else {
+          onDraftChange(null)
+        }
+        return
+      }
+      if (d?.type === 'polygon') {
+        e.preventDefault()
+        if ((d.points?.length ?? 0) >= 3) {
+          finishPolygon()
+        } else {
+          onDraftChange(null)
+        }
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [finishPolyline, onDraftChange])
+  }, [finishPolyline, finishPolygon, onDraftChange])
 
   const handleCanvasClick = (event: MouseEvent<SVGSVGElement>) => {
     if (skipNextClick.current) {
@@ -221,6 +305,11 @@ export function DrawingCanvas({
 
     if (activeTool === 'select') {
       onSelect(null)
+      return
+    }
+
+    if (activeTool === 'fillPick') {
+      onFillPick?.(point)
       return
     }
 
@@ -258,15 +347,84 @@ export function DrawingCanvas({
       return
     }
 
-    if (!draft) {
+    if (activeTool === 'polygon' && draft?.type === 'polygon') {
       onDraftChange({
-        type: activeTool as DraftElement['type'],
-        start: point,
+        ...draft,
         end: point,
-        points: activeTool === 'polyline' ? [point] : undefined,
-        sweepAngle: activeTool === 'arc' ? arcAngle : undefined,
-        style: currentStyle,
+        points: [...(draft.points ?? [draft.start]), point],
       })
+      return
+    }
+
+    if (activeTool === 'sector') {
+      if (!draft || draft.type !== 'sector') {
+        onDraftChange({ type: 'sector', start: point, end: point, points: [point], style: currentStyle })
+        return
+      }
+      const pts = draft.points ?? []
+      if (pts.length === 1) {
+        onDraftChange({ ...draft, points: [pts[0], point], end: point })
+        return
+      }
+      if (pts.length >= 2) {
+        const c = pts[0]
+        const r1 = pts[1]
+        const r2 = point
+        const radius = distance(c, r1)
+        const startAngleDeg = (Math.atan2(r1.y - c.y, r1.x - c.x) * 180) / Math.PI
+        const endAngleDeg = (Math.atan2(r2.y - c.y, r2.x - c.x) * 180) / Math.PI
+        onCreate({
+          id: createId(),
+          type: 'sector',
+          center: c,
+          radius,
+          startAngleDeg,
+          endAngleDeg,
+          style: draft.style,
+        })
+        onDraftChange(null)
+        return
+      }
+    }
+
+    if (activeTool === 'regularPolygon') {
+      if (!draft || draft.type !== 'regularPolygon') {
+        onDraftChange({ type: 'regularPolygon', start: point, end: point, points: [point], style: currentStyle })
+        return
+      }
+      const c = draft.points?.[0]
+      if (c) {
+        onRegularPolygonTwoPoints?.(c, point)
+        onDraftChange(null)
+      }
+      return
+    }
+
+    if (!draft) {
+      const drawableTwoClick = ['line', 'arc', 'rectangle', 'circle', 'ellipse'] as const
+      const da = activeTool
+      if (da === 'polyline' || da === 'polygon') {
+        onDraftChange({
+          type: da,
+          start: point,
+          end: point,
+          points: [point],
+          sweepAngle: undefined,
+          style: currentStyle,
+        })
+        return
+      }
+      if ((drawableTwoClick as readonly string[]).includes(da)) {
+        onDraftChange({
+          type: da as DraftElement['type'],
+          start: point,
+          end: point,
+          points: undefined,
+          sweepAngle: da === 'arc' ? arcAngle : undefined,
+          style: currentStyle,
+        })
+        return
+      }
       return
     }
 
@@ -319,14 +477,14 @@ export function DrawingCanvas({
   }
 
   const renderElement = (element: DrawingElement, isDraft = false) => {
-    const selected = !isDraft && selectedId === element.id
+    const selected = !isDraft && selectedIds.includes(element.id)
     const isIntersectionPick = !isDraft && activeTool === 'intersection' && intersectionPickIds.includes(element.id)
     const handleElementClick = (event: MouseEvent) => {
       event.stopPropagation()
       if (activeTool === 'intersection' && !isDraft) {
         onIntersectionElementPick(element.id)
       } else {
-        onSelect(element.id)
+        onSelect(element.id, event.shiftKey)
       }
     }
     const shapeClass = selected ? 'shape selected' : isIntersectionPick ? 'shape intersection-pick' : 'shape'
@@ -373,12 +531,14 @@ export function DrawingCanvas({
 
     if (element.type === 'rectangle') {
       const bounds = rectangleBounds(element.start, element.end, cs)
+      const fs = svgFillStrokePreview(element.style)
 
       return (
         <rect
           key={element.id}
           {...commonProps}
-          fill="none"
+          fill={fs.fill}
+          fillOpacity={fs.fillOpacity}
           height={bounds.height}
           width={bounds.width}
           x={bounds.x}
@@ -390,6 +550,7 @@ export function DrawingCanvas({
 
     if (element.type === 'circle') {
       const center = tikzToSvg(element.center, cs)
+      const fs = svgFillStrokePreview(element.style)
 
       return (
         <circle
@@ -397,7 +558,8 @@ export function DrawingCanvas({
           {...commonProps}
           cx={center.x}
           cy={center.y}
-          fill="none"
+          fill={fs.fill}
+          fillOpacity={fs.fillOpacity}
           r={distance(element.center, element.radiusPoint) * cs.pixelsPerUnit}
           onClick={handleElementClick}
         />
@@ -407,6 +569,7 @@ export function DrawingCanvas({
     if (element.type === 'ellipse') {
       const center = tikzToSvg(element.center, cs)
       const radii = ellipseRadii(element.center, element.radiusPoint, cs)
+      const fs = svgFillStrokePreview(element.style)
 
       return (
         <ellipse
@@ -414,7 +577,8 @@ export function DrawingCanvas({
           {...commonProps}
           cx={center.x}
           cy={center.y}
-          fill="none"
+          fill={fs.fill}
+          fillOpacity={fs.fillOpacity}
           rx={radii.rx}
           ry={radii.ry}
           onClick={handleElementClick}
@@ -859,6 +1023,144 @@ export function DrawingCanvas({
       )
     }
 
+    if (element.type === 'polygon') {
+      const fs = svgFillStrokePreview(element.style)
+      const pts = element.vertices.map((p) => tikzToSvg(p, cs)).map((p) => `${p.x},${p.y}`).join(' ')
+      return (
+        <polygon
+          key={element.id}
+          {...commonProps}
+          fill={fs.fill}
+          fillOpacity={fs.fillOpacity}
+          points={pts}
+          onClick={handleElementClick}
+        />
+      )
+    }
+
+    if (element.type === 'filledPath') {
+      const fs = svgFillStrokePreview(element.style)
+      const pts = element.vertices.map((p) => tikzToSvg(p, cs)).map((p) => `${p.x},${p.y}`).join(' ')
+      return (
+        <polygon
+          key={element.id}
+          {...commonProps}
+          fill={fs.fill}
+          fillOpacity={fs.fillOpacity}
+          points={pts}
+          onClick={handleElementClick}
+        />
+      )
+    }
+
+    if (element.type === 'sector') {
+      const fs = svgFillStrokePreview(element.style)
+      const d = sectorPathSvg(
+        element.center,
+        element.radius,
+        element.startAngleDeg,
+        element.endAngleDeg,
+        cs,
+      )
+      return (
+        <path
+          key={element.id}
+          {...commonProps}
+          d={d}
+          fill={fs.fill}
+          fillOpacity={fs.fillOpacity}
+          onClick={handleElementClick}
+        />
+      )
+    }
+
+    if (element.type === 'regularPolygon') {
+      const fs = svgFillStrokePreview(element.style)
+      const verts = regularPolygonVertices(element)
+      const pts = verts.map((p) => tikzToSvg(p, cs)).map((p) => `${p.x},${p.y}`).join(' ')
+      return (
+        <polygon
+          key={element.id}
+          {...commonProps}
+          fill={fs.fill}
+          fillOpacity={fs.fillOpacity}
+          points={pts}
+          onClick={handleElementClick}
+        />
+      )
+    }
+
+    if (element.type === 'conicCurve') {
+      const pts = sampleConicCurve(element)
+      const ptStr = pts.map((p) => tikzToSvg(p, cs)).map((p) => `${p.x},${p.y}`).join(' ')
+      return (
+        <polyline
+          key={element.id}
+          {...commonProps}
+          fill="none"
+          points={ptStr}
+          onClick={handleElementClick}
+        />
+      )
+    }
+
+    if (element.type === 'functionPlot') {
+      const pts = sampleFunctionPlot(element)
+      const ptStr = pts.map((p) => tikzToSvg(p, cs)).map((p) => `${p.x},${p.y}`).join(' ')
+      return (
+        <polyline
+          key={element.id}
+          {...commonProps}
+          fill="none"
+          points={ptStr}
+          onClick={handleElementClick}
+        />
+      )
+    }
+
+    if (element.type === 'tikzForeach') {
+      const vals = expandForeachList(element.listExpr, element.previewLimit)
+      const macro = element.iteratorName.replace(/^\\/, '') || 'i'
+      const pieces: ReactNode[] = []
+      vals.forEach((val, ix) => {
+        const drawLine = element.bodyTemplate.includes('\\draw') || element.bodyTemplate.includes('draw')
+        if (drawLine && element.bodyTemplate.includes('(')) {
+          const tpl = element.bodyTemplate.replaceAll(`\\${macro}`, val).replaceAll(`#1`, val).replaceAll('{{i}}', val)
+          const m = tpl.match(/\(([^)]+)\)\s*--\s*\(([^)]+)\)/)
+          if (m) {
+            const parsePt = (s: string) => {
+              const parts = s.split(',').map((x) => Number.parseFloat(x.trim()))
+              return { x: parts[0] ?? 0, y: parts[1] ?? 0 }
+            }
+            const a = parsePt(m[1])
+            const b = parsePt(m[2])
+            const sa = tikzToSvg(a, cs)
+            const sb = tikzToSvg(b, cs)
+            pieces.push(
+              <line
+                key={`${element.id}-f-${ix}`}
+                className={shapeClass}
+                opacity={element.style.opacity}
+                stroke={element.style.drawColor}
+                strokeLinecap="round"
+                strokeWidth={element.style.lineWidth * 2}
+                x1={sa.x}
+                x2={sb.x}
+                y1={sa.y}
+                y2={sb.y}
+                onClick={handleElementClick}
+              />,
+            )
+          }
+        }
+      })
+      return (
+        <g key={element.id} onClick={handleElementClick}>
+          {pieces}
+        </g>
+      )
+    }
+
     if (element.type === 'point' || element.type === 'intersectionPoint') {
       const center = tikzToSvg(element.center, cs)
       const isIx = element.type === 'intersectionPoint'
@@ -895,30 +1197,92 @@ export function DrawingCanvas({
       )
     }
 
-    return (
-      <polyline
-        key={element.id}
-        {...commonProps}
-        fill="none"
-        points={element.points.map((point) => tikzToSvg(point, cs)).map((point) => `${point.x},${point.y}`).join(' ')}
-        onClick={handleElementClick}
-      />
-    )
+    if (element.type === 'polyline') {
+      const fs = svgFillStrokePreview(element.style)
+      const ptStr = element.points.map((p) => tikzToSvg(p, cs)).map((p) => `${p.x},${p.y}`).join(' ')
+      return (
+        <polyline
+          key={element.id}
+          {...commonProps}
+          fill={element.closed ? fs.fill : 'none'}
+          fillOpacity={element.closed ? fs.fillOpacity : undefined}
+          points={ptStr}
+          onClick={handleElementClick}
+        />
+      )
+    }
+
+    return null
   }
 
-  const draftElement: DrawingElement | null = draft
-    ? draft.type === 'line'
-      ? { id: 'draft', type: 'line', start: draft.start, end: draft.end, style: draft.style }
-      : draft.type === 'arc'
-        ? { id: 'draft', type: 'arc', start: draft.start, end: draft.end, sweepAngle: draft.sweepAngle ?? arcAngle, style: draft.style }
-        : draft.type === 'rectangle'
-          ? { id: 'draft', type: 'rectangle', start: draft.start, end: draft.end, style: draft.style }
-          : draft.type === 'circle'
-            ? { id: 'draft', type: 'circle', center: draft.start, radiusPoint: draft.end, style: draft.style }
-            : draft.type === 'ellipse'
-              ? { id: 'draft', type: 'ellipse', center: draft.start, radiusPoint: draft.end, style: draft.style }
-              : { id: 'draft', type: 'polyline', points: [...(draft.points ?? [draft.start]), draft.end], style: draft.style }
-    : null
+  const draftElement: DrawingElement | null = (() => {
+    if (!draft) return null
+    const st = draft.style
+    if (draft.type === 'line') return { id: 'draft', type: 'line', start: draft.start, end: draft.end, style: st }
+    if (draft.type === 'arc')
+      return {
+        id: 'draft',
+        type: 'arc',
+        start: draft.start,
+        end: draft.end,
+        sweepAngle: draft.sweepAngle ?? arcAngle,
+        style: st,
+      }
+    if (draft.type === 'rectangle')
+      return { id: 'draft', type: 'rectangle', start: draft.start, end: draft.end, style: st }
+    if (draft.type === 'circle')
+      return { id: 'draft', type: 'circle', center: draft.start, radiusPoint: draft.end, style: st }
+    if (draft.type === 'ellipse')
+      return { id: 'draft', type: 'ellipse', center: draft.start, radiusPoint: draft.end, style: st }
+    if (draft.type === 'polygon')
+      return {
+        id: 'draft',
+        type: 'polygon',
+        vertices: [...(draft.points ?? [draft.start]), draft.end],
+        style: st,
+      }
+    if (draft.type === 'sector') {
+      const pts = draft.points ?? []
+      if (pts.length === 1) {
+        return { id: 'draft', type: 'line', start: pts[0], end: draft.end, style: st }
+      }
+      if (pts.length >= 2) {
+        const c = pts[0]
+        const r1 = pts[1]
+        return {
+          id: 'draft',
+          type: 'sector',
+          center: c,
+          radius: distance(c, r1),
+          startAngleDeg: (Math.atan2(r1.y - c.y, r1.x - c.x) * 180) / Math.PI,
+          endAngleDeg: (Math.atan2(draft.end.y - c.y, draft.end.x - c.x) * 180) / Math.PI,
+          style: st,
+        }
+      }
+      return null
+    }
+    if (draft.type === 'regularPolygon') {
+      const pts = draft.points ?? []
+      if (pts.length >= 1) {
+        return {
+          id: 'draft',
+          type: 'regularPolygon',
+          center: pts[0],
+          firstVertex: draft.end,
+          sides: 6,
+          style: st,
+        }
+      }
+      return null
+    }
+    return {
+      id: 'draft',
+      type: 'polyline',
+      points: [...(draft.points ?? [draft.start]), draft.end],
+      style: st,
+      closed: polylineClosed,
+    }
+  })()
   const origin = tikzToSvg({ x: 0, y: 0 }, cs)
 
   return (
@@ -939,6 +1303,21 @@ export function DrawingCanvas({
         onPointerUp={handlePointerUp}
       >
         <defs>
+          <pattern id="pat-horizontal-lines" patternUnits="userSpaceOnUse" width="8" height="8">
+            <path d="M0,4 L8,4" stroke="#64748b" strokeWidth="1" />
+          </pattern>
+          <pattern id="pat-vertical-lines" patternUnits="userSpaceOnUse" width="8" height="8">
+            <path d="M4,0 L4,8" stroke="#64748b" strokeWidth="1" />
+          </pattern>
+          <pattern id="pat-north-east-lines" patternUnits="userSpaceOnUse" width="8" height="8">
+            <path d="M0,8 L8,0" stroke="#64748b" strokeWidth="1" />
+          </pattern>
+          <pattern id="pat-dots" patternUnits="userSpaceOnUse" width="6" height="6">
+            <circle cx="2" cy="2" fill="#64748b" r="1" />
+          </pattern>
+          <pattern id="pat-grid" patternUnits="userSpaceOnUse" width="10" height="10">
+            <path d="M10,0 L0,0 L0,10" fill="none" stroke="#64748b" strokeWidth="0.5" />
+          </pattern>
           <marker id="arrow-end" markerHeight="8" markerWidth="8" orient="auto" refX="7" refY="4">
             <path d="M 0 0 L 8 4 L 0 8 z" fill="context-stroke" />
           </marker>

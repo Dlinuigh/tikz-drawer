@@ -10,13 +10,18 @@ import type {
   AxesElement,
   ArrowHead,
   CircleSubtool,
+  CoordinateInputMode,
   DrawingElement,
   DrawingStyle,
   EllipseSubtool,
+  FillMode,
+  FillPatternName,
+  FunctionPlotElement,
   LineCap,
   LineJoin,
   LineStyle,
   LineSubtool,
+  PolarAngleUnit,
   Tool,
 } from '../types/drawing'
 
@@ -448,6 +453,10 @@ type PropertiesPanelProps = {
   arcAngle: number
   currentStyle: DrawingStyle
   selectedElement: DrawingElement | null
+  selectedIds: string[]
+  polylineClosed: boolean
+  coordinateInputMode: CoordinateInputMode
+  polarAngleUnit: PolarAngleUnit
   onLineSubtoolChange: (sub: LineSubtool) => void
   onCircleSubtoolChange: (sub: CircleSubtool) => void
   onEllipseSubtoolChange: (sub: EllipseSubtool) => void
@@ -456,7 +465,26 @@ type PropertiesPanelProps = {
   onStyleChange: (style: DrawingStyle) => void
   onUpdate: (element: DrawingElement) => void
   onDelete: (id: string) => void
+  onPolylineClosedChange: (closed: boolean) => void
+  onCoordinateInputModeChange: (mode: CoordinateInputMode) => void
+  onPolarAngleUnitChange: (unit: PolarAngleUnit) => void
+  onPolarPoint: (r: number, angle: number) => void
+  onSplitAtIntersections?: () => void
+  onMergeCycleToFill?: () => void
 }
+
+const FILL_TYPES: DrawingElement['type'][] = [
+  'rectangle',
+  'circle',
+  'ellipse',
+  'polyline',
+  'polygon',
+  'sector',
+  'regularPolygon',
+  'filledPath',
+]
+
+const supportsFill = (t: DrawingElement['type']): boolean => FILL_TYPES.includes(t)
 
 const updateStyle = (element: DrawingElement, style: Partial<DrawingStyle>): DrawingElement => ({
   ...element,
@@ -473,6 +501,13 @@ const elementTypeLabel: Record<DrawingElement['type'], string> = {
   circle: '圆',
   ellipse: '椭圆',
   polyline: '多段线',
+  polygon: '多边形',
+  sector: '扇形',
+  regularPolygon: '正多边形',
+  conicCurve: '圆锥曲线',
+  filledPath: '填充区域',
+  functionPlot: '函数图像',
+  tikzForeach: 'Foreach',
   axes: '坐标轴（旧）',
   axisLine: '坐标轴（单轴）',
   point: '点',
@@ -487,6 +522,13 @@ const toolLabels: Record<Tool, string> = {
   circle: '圆',
   ellipse: '椭圆',
   polyline: '多段线',
+  polygon: '多边形',
+  sector: '扇形',
+  regularPolygon: '正多边形',
+  conic: '圆锥曲线',
+  plot: '函数图像',
+  foreach: 'Foreach',
+  fillPick: '填充拾取',
   axes: '坐标轴',
   point: '点',
   intersection: '交点',
@@ -503,6 +545,10 @@ export function PropertiesPanel({
   arcAngle,
   currentStyle,
   selectedElement,
+  selectedIds,
+  polylineClosed,
+  coordinateInputMode,
+  polarAngleUnit,
   onLineSubtoolChange,
   onCircleSubtoolChange,
   onEllipseSubtoolChange,
@@ -511,7 +557,16 @@ export function PropertiesPanel({
   onStyleChange,
   onUpdate,
   onDelete,
+  onPolylineClosedChange,
+  onCoordinateInputModeChange,
+  onPolarAngleUnitChange,
+  onPolarPoint,
+  onSplitAtIntersections,
+  onMergeCycleToFill,
 }: PropertiesPanelProps) {
+  const [polarR, setPolarR] = useState('2')
+  const [polarAng, setPolarAng] = useState('45')
+
   if (!selectedElement) {
     return (
       <aside className="properties-panel">
@@ -604,6 +659,76 @@ export function PropertiesPanel({
             <p className="hint">
               选中本工具后将立刻打开对话框（尚无坐标轴图元时）。可勾选只建 x 轴、只建 y 轴或两根轴（两根为独立图元，可分别求交与编辑）。画布显示/隐藏：<strong>View</strong> 菜单中的 <strong>X 轴</strong> / <strong>Y 轴</strong> 两项（文案随当前状态切换）。
             </p>
+          )}
+
+          {activeTool === 'polyline' && (
+            <label className="checkbox-row">
+              <input
+                checked={polylineClosed}
+                type="checkbox"
+                onChange={(e) => onPolylineClosedChange(e.target.checked)}
+              />
+              闭合多段线（可填充，Esc 结束）
+            </label>
+          )}
+
+          {activeTool === 'polygon' && (
+            <p className="hint">依次点击顶点，Esc 结束（至少 3 点）。自动闭合为多边形。</p>
+          )}
+
+          {(activeTool === 'sector' || activeTool === 'regularPolygon') && (
+            <p className="hint">
+              {activeTool === 'sector'
+                ? '扇形：先圆心，再圆弧上第一点，再第二点（半径取第一点到圆心距离）。'
+                : '正多边形：先圆心，再圆周上一点，然后在对话框输入边数。'}
+            </p>
+          )}
+
+          <label>
+            坐标输入偏好
+            <select
+              value={coordinateInputMode}
+              onChange={(e) => onCoordinateInputModeChange(e.target.value as CoordinateInputMode)}
+            >
+              <option value="cartesian">笛卡尔</option>
+              <option value="polar">极坐标定点（面板）</option>
+            </select>
+          </label>
+
+          {coordinateInputMode === 'polar' && (
+            <>
+              <label>
+                角度单位
+                <select
+                  value={polarAngleUnit}
+                  onChange={(e) => onPolarAngleUnitChange(e.target.value as PolarAngleUnit)}
+                >
+                  <option value="deg">度</option>
+                  <option value="rad">弧度</option>
+                </select>
+              </label>
+              <label>
+                极径 r（相对原点）
+                <input value={polarR} onChange={(e) => setPolarR(e.target.value)} type="text" inputMode="decimal" />
+              </label>
+              <label>
+                角
+                <input value={polarAng} onChange={(e) => setPolarAng(e.target.value)} type="text" inputMode="decimal" />
+              </label>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  const r = parseFlexibleNumber(polarR)
+                  const a = parseFlexibleNumber(polarAng)
+                  if (!Number.isNaN(r) && !Number.isNaN(a)) {
+                    onPolarPoint(r, a)
+                  }
+                }}
+              >
+                添加极坐标点（原点为极心）
+              </button>
+            </>
           )}
 
           <hr />
@@ -705,6 +830,59 @@ export function PropertiesPanel({
               onChange={(e) => onStyleChange({ ...currentStyle, opacity: Number(e.target.value) })}
             />
           </label>
+
+          <p className="field-group-title">默认填充（闭合图元）</p>
+          <label>
+            填充模式
+            <select
+              value={currentStyle.fillMode}
+              onChange={(e) => onStyleChange({ ...currentStyle, fillMode: e.target.value as FillMode })}
+            >
+              <option value="none">无</option>
+              <option value="solid">纯色</option>
+              <option value="pattern">图案（TikZ patterns）</option>
+            </select>
+          </label>
+          {currentStyle.fillMode !== 'none' && (
+            <>
+              <label>
+                填充色
+                <ColorPicker
+                  color={currentStyle.fillColor}
+                  variant="presets"
+                  onChange={(fillColor) => onStyleChange({ ...currentStyle, fillColor })}
+                />
+              </label>
+              <label>
+                填充不透明度：{currentStyle.fillOpacity}
+                <input
+                  type="range"
+                  min={0.05}
+                  max={1}
+                  step={0.05}
+                  value={currentStyle.fillOpacity}
+                  onChange={(e) => onStyleChange({ ...currentStyle, fillOpacity: Number(e.target.value) })}
+                />
+              </label>
+              {currentStyle.fillMode === 'pattern' && (
+                <label>
+                  图案
+                  <select
+                    value={currentStyle.fillPattern}
+                    onChange={(e) =>
+                      onStyleChange({ ...currentStyle, fillPattern: e.target.value as FillPatternName })
+                    }
+                  >
+                    <option value="horizontal lines">horizontal lines</option>
+                    <option value="vertical lines">vertical lines</option>
+                    <option value="north east lines">north east lines</option>
+                    <option value="dots">dots</option>
+                    <option value="grid">grid</option>
+                  </select>
+                </label>
+              )}
+            </>
+          )}
         </div>
       </aside>
     )
@@ -717,6 +895,27 @@ export function PropertiesPanel({
       </div>
       <div className="properties-panel-scroll">
       <p className="element-id">{elementTypeLabel[selectedElement.type]} · {selectedElement.id}</p>
+
+      {selectedIds.length > 1 && (
+        <>
+          <p className="hint">已选 {selectedIds.length} 项。直线围成闭合回路时可合并为填充区域（Shift+点击多选直线）。</p>
+          {onMergeCycleToFill && (
+            <button type="button" className="primary" onClick={onMergeCycleToFill}>
+              合并为填充区域
+            </button>
+          )}
+        </>
+      )}
+
+      {selectedIds.length === 1 &&
+        onSplitAtIntersections &&
+        (selectedElement.type === 'line' ||
+          selectedElement.type === 'polyline' ||
+          selectedElement.type === 'arc') && (
+          <button type="button" onClick={onSplitAtIntersections}>
+            在交点标记处分割
+          </button>
+        )}
 
       {(selectedElement.type === 'point' || selectedElement.type === 'intersectionPoint') && (
         <label>
@@ -825,6 +1024,137 @@ export function PropertiesPanel({
           onChange={(event) => onUpdate(updateStyle(selectedElement, { opacity: Number(event.target.value) }))}
         />
       </label>
+
+      {supportsFill(selectedElement.type) && (
+        <>
+          <p className="field-group-title">填充</p>
+          <label>
+            填充模式
+            <select
+              value={selectedElement.style.fillMode}
+              onChange={(event) =>
+                onUpdate(updateStyle(selectedElement, { fillMode: event.target.value as FillMode }))
+              }
+            >
+              <option value="none">无</option>
+              <option value="solid">纯色</option>
+              <option value="pattern">图案</option>
+            </select>
+          </label>
+          {selectedElement.style.fillMode !== 'none' && (
+            <>
+              <label>
+                填充色
+                <ColorPicker
+                  color={selectedElement.style.fillColor}
+                  variant="presets"
+                  onChange={(fillColor) => onUpdate(updateStyle(selectedElement, { fillColor }))}
+                />
+              </label>
+              <label>
+                填充不透明度：{selectedElement.style.fillOpacity}
+                <input
+                  max="1"
+                  min="0.05"
+                  step="0.05"
+                  type="range"
+                  value={selectedElement.style.fillOpacity}
+                  onChange={(event) =>
+                    onUpdate(updateStyle(selectedElement, { fillOpacity: Number(event.target.value) }))
+                  }
+                />
+              </label>
+              {selectedElement.style.fillMode === 'pattern' && (
+                <label>
+                  图案
+                  <select
+                    value={selectedElement.style.fillPattern}
+                    onChange={(event) =>
+                      onUpdate(
+                        updateStyle(selectedElement, {
+                          fillPattern: event.target.value as FillPatternName,
+                        }),
+                      )
+                    }
+                  >
+                    <option value="horizontal lines">horizontal lines</option>
+                    <option value="vertical lines">vertical lines</option>
+                    <option value="north east lines">north east lines</option>
+                    <option value="dots">dots</option>
+                    <option value="grid">grid</option>
+                  </select>
+                </label>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {selectedElement.type === 'polyline' && (
+        <label className="checkbox-row">
+          <input
+            checked={!!selectedElement.closed}
+            type="checkbox"
+            onChange={(event) => onUpdate({ ...selectedElement, closed: event.target.checked })}
+          />
+          闭合（用于填充与 cycle）
+        </label>
+      )}
+
+      {selectedElement.type === 'functionPlot' && (
+        <>
+          <label>
+            表达式（显式）
+            <input
+              type="text"
+              value={selectedElement.expression}
+              onChange={(event) => onUpdate({ ...selectedElement, expression: event.target.value })}
+            />
+          </label>
+          <label>
+            隐式 F(x,y)=0（优先于显式）
+            <input
+              type="text"
+              value={selectedElement.implicitEquation ?? ''}
+              placeholder="留空则用显式"
+              onChange={(event) => {
+                const t = event.target.value.trim()
+                onUpdate({ ...selectedElement, implicitEquation: t === '' ? null : t })
+              }}
+            />
+          </label>
+          <label>
+            坐标模式
+            <select
+              value={selectedElement.coordinateMode}
+              onChange={(event) =>
+                onUpdate({
+                  ...selectedElement,
+                  coordinateMode: event.target.value as FunctionPlotElement['coordinateMode'],
+                })
+              }
+            >
+              <option value="cartesian">笛卡尔 y=f(x)</option>
+              <option value="polar">极坐标 r=f(t)</option>
+            </select>
+          </label>
+          <FractionalField
+            label="定义域 min"
+            value={selectedElement.domainMin}
+            onCommit={(domainMin) => onUpdate({ ...selectedElement, domainMin })}
+          />
+          <FractionalField
+            label="定义域 max"
+            value={selectedElement.domainMax}
+            onCommit={(domainMax) => onUpdate({ ...selectedElement, domainMax })}
+          />
+          <FractionalField
+            label="采样数"
+            value={selectedElement.samples}
+            onCommit={(samples) => onUpdate({ ...selectedElement, samples: Math.max(8, Math.round(samples)) })}
+          />
+        </>
+      )}
 
       {selectedElement.type === 'arc' && (
         <label>

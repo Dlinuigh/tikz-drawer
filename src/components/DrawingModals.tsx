@@ -1,6 +1,14 @@
 import { useState } from 'react'
 import { parseFlexibleNumber } from '../lib/parseNumber'
-import type { Point } from '../types/drawing'
+import type {
+  ConicCurveElement,
+  ConicKind,
+  FunctionPlotElement,
+  HyperbolaBranch,
+  PlotCoordinateMode,
+  Point,
+  TikzForeachElement,
+} from '../types/drawing'
 
 export type AxesBoundsPayload = {
   xMin: number
@@ -463,6 +471,306 @@ export function LineSlopeModal({ open, anchor, onConfirm, onCancel }: LineSlopeM
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
       <LineSlopeForm key={`${anchor.x},${anchor.y}`} anchor={anchor} onConfirm={onConfirm} onCancel={onCancel} />
+    </div>
+  )
+}
+
+type RegularPolygonModalProps = {
+  open: boolean
+  center: Point | null
+  firstVertex: Point | null
+  onConfirm: (center: Point, firstVertex: Point, sides: number) => void
+  onCancel: () => void
+}
+
+export function RegularPolygonModal({ open, center, firstVertex, onConfirm, onCancel }: RegularPolygonModalProps) {
+  const [sides, setSides] = useState('6')
+  const [error, setError] = useState<string | null>(null)
+  if (!open || !center || !firstVertex) return null
+
+  const submit = () => {
+    const n = Number.parseInt(sides, 10)
+    if (!Number.isFinite(n) || n < 3 || n > 64) {
+      setError('边数应为 3–64 的整数')
+      return
+    }
+    onConfirm(center, firstVertex, n)
+    setError(null)
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <div className="modal-panel" role="dialog" onMouseDown={(e) => e.stopPropagation()}>
+        <h3>正多边形</h3>
+        <p className="hint">
+          中心 ({center.x}, {center.y})，第一顶点 ({firstVertex.x}, {firstVertex.y})。
+        </p>
+        <label>
+          边数 n
+          <input value={sides} onChange={(e) => setSides(e.target.value)} type="text" inputMode="numeric" />
+        </label>
+        {error && <p className="modal-error">{error}</p>}
+        <div className="modal-actions">
+          <button type="button" onClick={onCancel}>取消</button>
+          <button type="button" className="primary" onClick={submit}>确定</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type ConicPayload = Omit<ConicCurveElement, 'id' | 'style'>
+
+type ConicModalProps = {
+  open: boolean
+  onConfirm: (partial: ConicPayload) => void
+  onCancel: () => void
+}
+
+export function ConicModal({ open, onConfirm, onCancel }: ConicModalProps) {
+  const [kind, setKind] = useState<ConicKind>('parabola')
+  const [semiAxisX, setSemiAxisX] = useState('2')
+  const [semiAxisY, setSemiAxisY] = useState('1')
+  const [rotationDeg, setRotationDeg] = useState('0')
+  const [domainMin, setDomainMin] = useState('-3')
+  const [domainMax, setDomainMax] = useState('3')
+  const [samples, setSamples] = useState('48')
+  const [branch, setBranch] = useState<HyperbolaBranch>('positive')
+  const [error, setError] = useState<string | null>(null)
+
+  if (!open) return null
+
+  const submit = () => {
+    const sx = parseFlexibleNumber(semiAxisX)
+    const sy = parseFlexibleNumber(semiAxisY)
+    const rot = parseFlexibleNumber(rotationDeg)
+    const d0 = parseFlexibleNumber(domainMin)
+    const d1 = parseFlexibleNumber(domainMax)
+    const ns = Number.parseInt(samples, 10)
+    if ([sx, sy, rot, d0, d1].some(Number.isNaN) || !Number.isFinite(ns) || ns < 8) {
+      setError('请输入有效数值')
+      return
+    }
+    if (d0 >= d1) {
+      setError('定义域下限须小于上限')
+      return
+    }
+    onConfirm({
+      type: 'conicCurve',
+      conicKind: kind,
+      center: { x: 0, y: 0 },
+      semiAxisX: sx,
+      semiAxisY: sy,
+      rotationDeg: rot,
+      domainMin: d0,
+      domainMax: d1,
+      samples: ns,
+      hyperbolaBranch: branch,
+    })
+    setError(null)
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <div className="modal-panel" role="dialog" onMouseDown={(e) => e.stopPropagation()}>
+        <h3>圆锥曲线（采样）</h3>
+        <label>
+          类型
+          <select value={kind} onChange={(e) => setKind(e.target.value as ConicKind)}>
+            <option value="parabola">抛物线（竖直开口，y=x²/(4p)，参数 b 为 4p）</option>
+            <option value="ellipse">椭圆（参数域为弧度）</option>
+            <option value="hyperbola">双曲线（参数域为双曲角）</option>
+          </select>
+        </label>
+        <label>
+          参数 a / p 方向
+          <input value={semiAxisX} onChange={(e) => setSemiAxisX(e.target.value)} />
+        </label>
+        <label>
+          参数 b
+          <input value={semiAxisY} onChange={(e) => setSemiAxisY(e.target.value)} />
+        </label>
+        <label>
+          旋转（°）
+          <input value={rotationDeg} onChange={(e) => setRotationDeg(e.target.value)} />
+        </label>
+        <label>
+          定义域 min
+          <input value={domainMin} onChange={(e) => setDomainMin(e.target.value)} />
+        </label>
+        <label>
+          定义域 max
+          <input value={domainMax} onChange={(e) => setDomainMax(e.target.value)} />
+        </label>
+        <label>
+          采样点数
+          <input value={samples} onChange={(e) => setSamples(e.target.value)} />
+        </label>
+        {kind === 'hyperbola' && (
+          <label>
+            分支
+            <select value={branch} onChange={(e) => setBranch(e.target.value as HyperbolaBranch)}>
+              <option value="positive">右支</option>
+              <option value="negative">左支</option>
+              <option value="both">两支</option>
+            </select>
+          </label>
+        )}
+        {error && <p className="modal-error">{error}</p>}
+        <div className="modal-actions">
+          <button type="button" onClick={onCancel}>取消</button>
+          <button type="button" className="primary" onClick={submit}>添加</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type PlotPayload = Omit<FunctionPlotElement, 'id' | 'style'>
+
+type FunctionPlotModalProps = {
+  open: boolean
+  onConfirm: (partial: PlotPayload) => void
+  onCancel: () => void
+}
+
+export function FunctionPlotModal({ open, onConfirm, onCancel }: FunctionPlotModalProps) {
+  const [expression, setExpression] = useState('sin(x)')
+  const [implicit, setImplicit] = useState('')
+  const [mode, setMode] = useState<PlotCoordinateMode>('cartesian')
+  const [domainMin, setDomainMin] = useState('-6.28')
+  const [domainMax, setDomainMax] = useState('6.28')
+  const [samples, setSamples] = useState('120')
+  const [error, setError] = useState<string | null>(null)
+
+  if (!open) return null
+
+  const submit = () => {
+    const d0 = parseFlexibleNumber(domainMin)
+    const d1 = parseFlexibleNumber(domainMax)
+    const ns = Number.parseInt(samples, 10)
+    if (Number.isNaN(d0) || Number.isNaN(d1) || d0 >= d1 || !Number.isFinite(ns) || ns < 8) {
+      setError('定义域或采样无效')
+      return
+    }
+    onConfirm({
+      type: 'functionPlot',
+      expression: implicit.trim() ? '0' : expression.trim(),
+      coordinateMode: mode,
+      domainMin: d0,
+      domainMax: d1,
+      samples: ns,
+      implicitEquation: implicit.trim() || null,
+    })
+    setError(null)
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <div className="modal-panel" role="dialog" onMouseDown={(e) => e.stopPropagation()}>
+        <h3>函数 / 方程图像</h3>
+        <p className="hint">显式：笛卡尔用 x 为变量；极坐标用 t 表示角（弧度）。隐式留空则不用。</p>
+        <label>
+          坐标
+          <select value={mode} onChange={(e) => setMode(e.target.value as PlotCoordinateMode)}>
+            <option value="cartesian">y = f(x)</option>
+            <option value="polar">r = f(t)</option>
+          </select>
+        </label>
+        <label>
+          表达式
+          <input value={expression} onChange={(e) => setExpression(e.target.value)} placeholder="sin(x) 或 t" />
+        </label>
+        <label>
+          隐式方程 F(x,y)=0（可选）
+          <input value={implicit} onChange={(e) => setImplicit(e.target.value)} placeholder="如 x^2+y^2-4" />
+        </label>
+        <label>
+          定义域 min
+          <input value={domainMin} onChange={(e) => setDomainMin(e.target.value)} />
+        </label>
+        <label>
+          定义域 max
+          <input value={domainMax} onChange={(e) => setDomainMax(e.target.value)} />
+        </label>
+        <label>
+          采样
+          <input value={samples} onChange={(e) => setSamples(e.target.value)} />
+        </label>
+        {error && <p className="modal-error">{error}</p>}
+        <div className="modal-actions">
+          <button type="button" onClick={onCancel}>取消</button>
+          <button type="button" className="primary" onClick={submit}>添加</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type ForeachPayload = Omit<TikzForeachElement, 'id' | 'style'>
+
+type ForeachModalProps = {
+  open: boolean
+  onConfirm: (partial: ForeachPayload) => void
+  onCancel: () => void
+}
+
+export function ForeachModal({ open, onConfirm, onCancel }: ForeachModalProps) {
+  const [iteratorName, setIteratorName] = useState('i')
+  const [listExpr, setListExpr] = useState('1,...,5')
+  const [bodyTemplate, setBodyTemplate] = useState(String.raw`\draw (0,\i) -- (1,\i);`)
+  const [previewLimit, setPreviewLimit] = useState('8')
+  const [error, setError] = useState<string | null>(null)
+
+  if (!open) return null
+
+  const submit = () => {
+    const pl = Number.parseInt(previewLimit, 10)
+    if (!iteratorName.trim()) {
+      setError('迭代变量名必填')
+      return
+    }
+    if (!Number.isFinite(pl) || pl < 1 || pl > 200) {
+      setError('预览上限 1–200')
+      return
+    }
+    onConfirm({
+      type: 'tikzForeach',
+      iteratorName: iteratorName.trim(),
+      listExpr: listExpr.trim(),
+      bodyTemplate,
+      previewLimit: pl,
+    })
+    setError(null)
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <div className="modal-panel" role="dialog" onMouseDown={(e) => e.stopPropagation()}>
+        <h3>TikZ foreach</h3>
+        <p className="hint">正文将原样写入导出；画布仅解析简单 <code>{'\\draw (x,y)--(x,y)'}</code> 预览。</p>
+        <label>
+          变量名（不写反斜杠）
+          <input value={iteratorName} onChange={(e) => setIteratorName(e.target.value)} />
+        </label>
+        <label>
+          列表
+          <input value={listExpr} onChange={(e) => setListExpr(e.target.value)} />
+        </label>
+        <label>
+          循环体
+          <textarea rows={4} value={bodyTemplate} onChange={(e) => setBodyTemplate(e.target.value)} />
+        </label>
+        <label>
+          预览展开上限
+          <input value={previewLimit} onChange={(e) => setPreviewLimit(e.target.value)} />
+        </label>
+        {error && <p className="modal-error">{error}</p>}
+        <div className="modal-actions">
+          <button type="button" onClick={onCancel}>取消</button>
+          <button type="button" className="primary" onClick={submit}>添加</button>
+        </div>
+      </div>
     </div>
   )
 }

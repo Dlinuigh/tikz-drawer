@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { ColorPicker } from './ColorPicker'
-import type { ArrowHead, DrawingStyle, LineCap, LineJoin, LineStyle } from '../types/drawing'
+import type { ArrowHead, DrawingStyle, FillMode, FillPatternName, LineCap, LineJoin, LineStyle } from '../types/drawing'
 
 type FloatingStylePanelProps = {
   style: DrawingStyle
@@ -169,6 +169,43 @@ export function FloatingStylePanel({ style, onStyleChange, onClose }: FloatingSt
               onChange={(event) => onStyleChange({ ...style, opacity: Number(event.target.value) })}
             />
           </label>
+
+          <label>
+            填充模式
+            <select
+              value={style.fillMode}
+              onChange={(event) => onStyleChange({ ...style, fillMode: event.target.value as FillMode })}
+            >
+              <option value="none">无</option>
+              <option value="solid">纯色</option>
+              <option value="pattern">图案</option>
+            </select>
+          </label>
+          {style.fillMode !== 'none' && (
+            <>
+              <label>
+                填充色
+                <ColorPicker color={style.fillColor} onChange={(fillColor) => onStyleChange({ ...style, fillColor })} />
+              </label>
+              {style.fillMode === 'pattern' && (
+                <label>
+                  图案
+                  <select
+                    value={style.fillPattern}
+                    onChange={(event) =>
+                      onStyleChange({ ...style, fillPattern: event.target.value as FillPatternName })
+                    }
+                  >
+                    <option value="horizontal lines">horizontal lines</option>
+                    <option value="vertical lines">vertical lines</option>
+                    <option value="north east lines">north east lines</option>
+                    <option value="dots">dots</option>
+                    <option value="grid">grid</option>
+                  </select>
+                </label>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>

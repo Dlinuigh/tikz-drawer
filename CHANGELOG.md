@@ -6,6 +6,12 @@ All notable changes to TikZ Drawer will be documented in this file.
 
 ### Added
 
+- **样式**：闭合图元支持填充模式（无 / 纯色 / TikZ `patterns` 图案）、填充色与不透明度；多段线可选「闭合」；导出使用 `patterns` 库。
+- **工具**：多边形（Esc 闭合）、扇形（圆心 + 弧上两点）、正多边形（圆心 + 顶点 + 边数对话框）、圆锥曲线采样、函数/隐式方程采样曲线、`\\foreach` 代码块（简化画布预览）、填色拾取（点击闭合区域套用当前填充色）。
+- **编辑**：Shift+多选直线；「合并为填充区域」（闭合环路检测）；「在交点标记处分割」直线/多段线/圆弧。
+- **极坐标**：属性栏「极坐标定点」从原点添加点（度/弧度）；坐标输入偏好切换。
+- **几何**：`geometry` 对新图元参与求交；Rust/前端 LaTeX 前言加入 `patterns`。
+
 - **GitHub Actions**：`.github/workflows/ci.yml` 在任意分支 **push**、**pull_request** 或手动 **workflow_dispatch** 时运行；Linux 任务执行 `npm ci`、`build`、`lint` 与 `cargo build --locked`，macOS 任务执行完整 `tauri build`。
 - **README**：顶部增加指向上述工作流的 CI 状态徽章与简要说明。
 

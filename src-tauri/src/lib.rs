@@ -17,7 +17,7 @@ fn latex_document(tikz_code: &str) -> String {
   format!(
     "\\documentclass[tikz,border=6pt]{{standalone}}
 \\usepackage{{tikz}}
-\\usetikzlibrary{{arrows.meta,calc,decorations.pathreplacing,positioning}}
+\\usetikzlibrary{{arrows.meta,calc,decorations.pathreplacing,positioning,patterns}}
 
 \\begin{{document}}
 {}

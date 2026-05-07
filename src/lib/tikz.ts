@@ -20,7 +20,9 @@ import {
   mergeAxisTickMarks,
   tickValuesInRange,
 } from './axes'
-import { distance, formatNumber, getArcGeometry, pointToTikz } from './geometry'
+import { sampleConicCurve } from './conicSamples'
+import { distance, formatNumber, getArcGeometry, pointToTikz, regularPolygonVertices } from './geometry'
+import { sampleFunctionPlot } from './plotSamples'
 
 const arrowHeadOptions: Record<DrawingStyle['startArrow'], string | null> = {
   none: null,
@@ -78,6 +80,39 @@ const strokeStyleToTikzOptions = (style: DrawingStyle): string => {
   return `[${options.join(', ')}]`
 }
 
+/** Stroke + optional fill / pattern for closed paths */
+const closedShapeOptions = (style: DrawingStyle): string => {
+  const parts = [
+    arrowToTikz(style),
+    `draw=${colorName(style.drawColor)}`,
+    lineStyleOptions[style.lineStyle],
+    `line width=${formatNumber(style.lineWidth)}pt`,
+    `line cap=${style.lineCap}`,
+    `line join=${style.lineJoin}`,
+  ].filter(Boolean)
+  if (style.fillMode === 'solid') {
+    parts.push(`fill=${colorName(style.fillColor)}`)
+    if (style.fillOpacity < 1) parts.push(`fill opacity=${formatNumber(style.fillOpacity)}`)
+  } else if (style.fillMode === 'pattern') {
+    parts.push(`pattern=${style.fillPattern}`)
+    parts.push(`pattern color=${colorName(style.fillColor)}`)
+    if (style.fillOpacity < 1) parts.push(`fill opacity=${formatNumber(style.fillOpacity)}`)
+  }
+  if (style.opacity < 1) parts.push(`opacity=${formatNumber(style.opacity)}`)
+  return `[${parts.join(', ')}]`
+}
+
+const closedOrDrawOpts = (style: DrawingStyle): string =>
+  style.fillMode === 'none' ? styleToTikzOptions(style) : closedShapeOptions(style)
+
+const plotCoordinatesLine = (pts: Point[]): string =>
+  pts.map((p) => `(${formatNumber(p.x)},${formatNumber(p.y)})`).join(' ')
+
+const foreachMacro = (name: string): string => {
+  const n = name.trim().replace(/^\\/, '')
+  return n ? `\\${n}` : '\\i'
+}
+
 const lineToTikz = (element: DrawingElement): string => {
   if (element.type !== 'line') {
     return ''
@@ -125,17 +160,21 @@ const rectangleToTikz = (element: DrawingElement): string => {
     return ''
   }
 
-  return `\\draw${styleToTikzOptions(element.style)} ${pointToTikz(element.start)} rectangle ${pointToTikz(element.end)};`
+  const cmd = element.style.fillMode === 'none' ? '\\draw' : '\\path'
+  return `${cmd}${closedOrDrawOpts(element.style)} ${pointToTikz(element.start)} rectangle ${pointToTikz(element.end)};`
 }
 
-const circleToTikz = (element: CircleElement): string =>
-  `\\draw${styleToTikzOptions(element.style)} ${pointToTikz(element.center)} circle[radius=${formatNumber(distance(element.center, element.radiusPoint))}];`
+const circleToTikz = (element: CircleElement): string => {
+  const cmd = element.style.fillMode === 'none' ? '\\draw' : '\\path'
+  return `${cmd}${closedOrDrawOpts(element.style)} ${pointToTikz(element.center)} circle[radius=${formatNumber(distance(element.center, element.radiusPoint))}];`
+}
 
 const ellipseToTikz = (element: EllipseElement): string => {
   const xRadius = Math.abs(element.radiusPoint.x - element.center.x)
   const yRadius = Math.abs(element.radiusPoint.y - element.center.y)
+  const cmd = element.style.fillMode === 'none' ? '\\draw' : '\\path'
 
-  return `\\draw${styleToTikzOptions(element.style)} ${pointToTikz(element.center)} ellipse[x radius=${formatNumber(xRadius)}, y radius=${formatNumber(yRadius)}];`
+  return `${cmd}${closedOrDrawOpts(element.style)} ${pointToTikz(element.center)} ellipse[x radius=${formatNumber(xRadius)}, y radius=${formatNumber(yRadius)}];`
 }
 
 const pointToTikzElement = (element: PointElement | IntersectionPointElement): string =>
@@ -147,7 +186,71 @@ const polylineToTikz = (element: DrawingElement): string => {
   }
 
   const points = element.points.map(pointToTikz).join(' -- ')
-  return `\\draw${styleToTikzOptions(element.style)} ${points};`
+  const suffix = element.closed ? ' -- cycle' : ''
+  const cmd =
+    element.closed && element.style.fillMode !== 'none' ? '\\path' : '\\draw'
+  const opts =
+    element.closed && element.style.fillMode !== 'none'
+      ? closedOrDrawOpts(element.style)
+      : styleToTikzOptions(element.style)
+  return `${cmd}${opts} ${points}${suffix};`
+}
+
+const polygonToTikz = (element: DrawingElement): string => {
+  if (element.type !== 'polygon') return ''
+  const pts = element.vertices.map(pointToTikz).join(' -- ')
+  const cmd = element.style.fillMode === 'none' ? '\\draw' : '\\path'
+  return `${cmd}${closedOrDrawOpts(element.style)} ${pts} -- cycle;`
+}
+
+const filledPathToTikz = (element: DrawingElement): string => {
+  if (element.type !== 'filledPath') return ''
+  const pts = element.vertices.map(pointToTikz).join(' -- ')
+  const cmd = element.style.fillMode === 'none' ? '\\draw' : '\\path'
+  return `${cmd}${closedOrDrawOpts(element.style)} ${pts} -- cycle;`
+}
+
+const sectorToTikz = (element: DrawingElement): string => {
+  if (element.type !== 'sector') return ''
+  const { center, radius, startAngleDeg, endAngleDeg } = element
+  const toRad = (d: number) => (d * Math.PI) / 180
+  const p0: Point = {
+    x: center.x + radius * Math.cos(toRad(startAngleDeg)),
+    y: center.y + radius * Math.sin(toRad(startAngleDeg)),
+  }
+  const cmd = element.style.fillMode === 'none' ? '\\draw' : '\\path'
+  return [
+    `${cmd}${closedOrDrawOpts(element.style)} ${pointToTikz(center)} -- ${pointToTikz(p0)}`,
+    `arc[start angle=${formatNumber(startAngleDeg)}, end angle=${formatNumber(endAngleDeg)}, radius=${formatNumber(radius)}] -- cycle;`,
+  ].join('\n')
+}
+
+const regularPolygonToTikz = (element: DrawingElement): string => {
+  if (element.type !== 'regularPolygon') return ''
+  const verts = regularPolygonVertices(element)
+  const pts = verts.map(pointToTikz).join(' -- ')
+  const cmd = element.style.fillMode === 'none' ? '\\draw' : '\\path'
+  return `${cmd}${closedOrDrawOpts(element.style)} ${pts} -- cycle;`
+}
+
+const conicToTikz = (element: DrawingElement): string => {
+  if (element.type !== 'conicCurve') return ''
+  const pts = sampleConicCurve(element)
+  if (pts.length < 2) return `% skipped empty conic ${element.id}`
+  return `\\draw${styleToTikzOptions(element.style)} plot coordinates { ${plotCoordinatesLine(pts)} };`
+}
+
+const functionPlotToTikz = (element: DrawingElement): string => {
+  if (element.type !== 'functionPlot') return ''
+  const pts = sampleFunctionPlot(element)
+  if (pts.length < 2) return `% skipped empty plot ${element.id}`
+  return `\\draw${styleToTikzOptions(element.style)} plot coordinates { ${plotCoordinatesLine(pts)} };`
+}
+
+const tikzForeachToTikz = (element: DrawingElement): string => {
+  if (element.type !== 'tikzForeach') return ''
+  const macro = foreachMacro(element.iteratorName)
+  return `% foreach ${element.id}\n\\foreach ${macro} in {${element.listExpr}} {\n${element.bodyTemplate}\n}`
 }
 
 const tickMarkBodyTikz = (tick: { value: number; label?: string }): string => {
@@ -312,6 +415,13 @@ export const elementToTikz = (element: DrawingElement): string => {
   if (element.type === 'circle') return circleToTikz(element)
   if (element.type === 'ellipse') return ellipseToTikz(element)
   if (element.type === 'polyline') return polylineToTikz(element)
+  if (element.type === 'polygon') return polygonToTikz(element)
+  if (element.type === 'filledPath') return filledPathToTikz(element)
+  if (element.type === 'sector') return sectorToTikz(element)
+  if (element.type === 'regularPolygon') return regularPolygonToTikz(element)
+  if (element.type === 'conicCurve') return conicToTikz(element)
+  if (element.type === 'functionPlot') return functionPlotToTikz(element)
+  if (element.type === 'tikzForeach') return tikzForeachToTikz(element)
   if (element.type === 'axisLine') return axisLineToTikz(element)
   if (element.type === 'axes') return axesToTikz(element)
   if (element.type === 'point' || element.type === 'intersectionPoint') return pointToTikzElement(element)
@@ -333,7 +443,11 @@ const gridToTikz = (gc: GridConfig): string => {
 
 export const buildTikzPicture = (elements: DrawingElement[], gridConfig: GridConfig = defaultGridConfig): string => {
   const body = elements.length > 0 ? elements.map(elementToTikz).join('\n') : '% Draw with the toolbar to generate TikZ paths.'
-  const colorSet = new Set(elements.map((element) => element.style.drawColor))
+  const colorSet = new Set<string>()
+  for (const element of elements) {
+    colorSet.add(element.style.drawColor)
+    if (element.style.fillMode !== 'none') colorSet.add(element.style.fillColor)
+  }
   if (gridConfig.showGridInExport) {
     colorSet.add(gridConfig.gridColor)
   }
@@ -348,7 +462,7 @@ export const buildTikzPicture = (elements: DrawingElement[], gridConfig: GridCon
 
 export const buildLatexDocument = (tikzPicture: string): string => `\\documentclass[tikz,border=6pt]{standalone}
 \\usepackage{tikz}
-\\usetikzlibrary{arrows.meta,calc,decorations.pathreplacing,positioning}
+\\usetikzlibrary{arrows.meta,calc,decorations.pathreplacing,positioning,patterns}
 
 \\begin{document}
 ${tikzPicture}

@@ -4,7 +4,18 @@ import { listen } from '@tauri-apps/api/event'
 import './App.css'
 import { DrawingCanvas } from './components/DrawingCanvas'
 import { GridSettingsModal } from './components/GridSettingsModal'
-import { ArcCenterRadiusAnglesModal, AxesBoundsModal, CircleRadiusModal, EllipseRadiiModal, IntersectionModal, LineSlopeModal } from './components/DrawingModals'
+import {
+  ArcCenterRadiusAnglesModal,
+  AxesBoundsModal,
+  CircleRadiusModal,
+  ConicModal,
+  EllipseRadiiModal,
+  ForeachModal,
+  FunctionPlotModal,
+  IntersectionModal,
+  LineSlopeModal,
+  RegularPolygonModal,
+} from './components/DrawingModals'
 import type { CompileResult } from './components/PreviewPanel'
 import { PropertiesPanel } from './components/PropertiesPanel'
 import { StatusBar } from './components/StatusBar'
@@ -16,20 +27,32 @@ import {
 } from './lib/axisCanvas'
 import { tikzCenterOfElement } from './lib/elementCenter'
 import { buildTikzPicture } from './lib/tikz'
-import { computeIntersections, coordinateSystemWithOrigin, defaultCoordinateSystem, defaultViewOrigin, snapTikzPoint } from './lib/geometry'
+import { cycleFromSelectedLines } from './lib/regionCycle'
+import { hitClosedShapeAtPoint } from './lib/hitTest'
+import {
+  computeIntersections,
+  coordinateSystemWithOrigin,
+  defaultCoordinateSystem,
+  defaultViewOrigin,
+  snapTikzPoint,
+} from './lib/geometry'
+import { polarInputToCartesian } from './lib/polar'
+import { splitElementAtIntersectionMarkers } from './lib/splitGeometry'
 import type {
   ArcSubtool,
   CircleSubtool,
+  CoordinateInputMode,
   DraftElement,
   DrawingElement,
   DrawingStyle,
   EllipseSubtool,
   GridConfig,
   LineSubtool,
+  PolarAngleUnit,
   Point,
   Tool,
 } from './types/drawing'
-import { defaultAxisLineOptionsFor, defaultGridConfig, defaultStyle } from './types/drawing'
+import { defaultAxisLineOptionsFor, defaultGridConfig, defaultStyle, normalizeDrawingStyle } from './types/drawing'
 
 const createId = () => crypto.randomUUID()
 
@@ -38,8 +61,17 @@ function App() {
   const [lineSubtool, setLineSubtool] = useState<LineSubtool>('twoPoints')
   const [elements, setElements] = useState<DrawingElement[]>([])
   const [draft, setDraft] = useState<DraftElement | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [polylineClosed, setPolylineClosed] = useState(false)
+  const [coordinateInputMode, setCoordinateInputMode] = useState<CoordinateInputMode>('cartesian')
+  const [polarAngleUnit, setPolarAngleUnit] = useState<PolarAngleUnit>('deg')
   const [currentStyle, setCurrentStyle] = useState<DrawingStyle>(defaultStyle)
+  const [regularPolygonCorners, setRegularPolygonCorners] = useState<{ center: Point; firstVertex: Point } | null>(
+    null,
+  )
+  const [conicModalOpen, setConicModalOpen] = useState(false)
+  const [plotModalOpen, setPlotModalOpen] = useState(false)
+  const [foreachModalOpen, setForeachModalOpen] = useState(false)
   const [arcAngle, setArcAngle] = useState(90)
   const [axesModalOrigin, setAxesModalOrigin] = useState<Point | null>(null)
   const [lineSlopeAnchor, setLineSlopeAnchor] = useState<Point | null>(null)
@@ -94,7 +126,20 @@ function App() {
     return () => { cancelled = true }
   }, [compileResult])
 
+  const selectedId = selectedIds[0] ?? null
   const selectedElement = elements.find((element) => element.id === selectedId) ?? null
+
+  const selectCanvas = useCallback((id: string | null, additive?: boolean) => {
+    if (id === null) {
+      setSelectedIds([])
+      return
+    }
+    if (additive) {
+      setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+    } else {
+      setSelectedIds([id])
+    }
+  }, [])
   const tikzCode = useMemo(() => buildTikzPicture(elements, gridConfig), [elements, gridConfig])
 
   // Refs for menu event handlers to avoid stale closures
@@ -119,6 +164,35 @@ function App() {
       }),
     )
   }, [])
+
+  const splitAtIntersectionMarkers = useCallback(() => {
+    const id = selectedIds[0]
+    if (!id) return
+    const target = elements.find((e) => e.id === id)
+    if (!target || (target.type !== 'line' && target.type !== 'polyline' && target.type !== 'arc')) return
+    const markers = elements.filter((e) => e.type === 'intersectionPoint').map((e) => e.center)
+    const parts = splitElementAtIntersectionMarkers(target, markers)
+    if (!parts?.length) return
+    purgeIntersectionPairsForId(id)
+    setElements((els) => [...els.filter((e) => e.id !== id), ...parts])
+    setSelectedIds(parts.map((p) => p.id))
+  }, [elements, selectedIds, purgeIntersectionPairsForId])
+
+  const mergeCycleToFilledPath = useCallback(() => {
+    const sel = selectedIds
+      .map((i) => elements.find((e) => e.id === i))
+      .filter(Boolean) as DrawingElement[]
+    const ring = cycleFromSelectedLines(sel)
+    if (!ring) return
+    const el: DrawingElement = {
+      id: createId(),
+      type: 'filledPath',
+      vertices: ring,
+      style: currentStyle,
+    }
+    setElements((els) => [...els, el])
+    setSelectedIds([el.id])
+  }, [selectedIds, elements, currentStyle])
 
   const toggleAxisCanvasOrientation = useCallback((orientation: 'x' | 'y') => {
     setElements((els) => toggleAxisOrientationVisibility(els, orientation))
@@ -253,7 +327,12 @@ function App() {
           listen('menu-new-canvas', () => {
             setElements([])
             setDraft(null)
-            setSelectedId(null)
+            setSelectedIds([])
+            setPolylineClosed(false)
+            setRegularPolygonCorners(null)
+            setConicModalOpen(false)
+            setPlotModalOpen(false)
+            setForeachModalOpen(false)
             setAxesModalOrigin(null)
             setLineSlopeAnchor(null)
             setCircleRadiusCenter(null)
@@ -425,7 +504,7 @@ function App() {
             })
           }
           setElements((currentElements) => [...currentElements, ...created])
-          setSelectedId(created[created.length - 1]?.id ?? null)
+          setSelectedIds(created[created.length - 1]?.id ? [created[created.length - 1]!.id] : [])
           setAxesModalOrigin(null)
         }}
       />
@@ -484,7 +563,7 @@ function App() {
             radius,
           }
           setElements((currentElements) => [...currentElements, element])
-          setSelectedId(element.id)
+          setSelectedIds([element.id])
           setArcCenterAnglesCenter(null)
         }}
       />
@@ -502,7 +581,7 @@ function App() {
             style: currentStyle,
           }
           setElements((currentElements) => [...currentElements, element])
-          setSelectedId(element.id)
+          setSelectedIds([element.id])
           setCircleRadiusCenter(null)
         }}
       />
@@ -520,7 +599,7 @@ function App() {
             style: currentStyle,
           }
           setElements((currentElements) => [...currentElements, element])
-          setSelectedId(element.id)
+          setSelectedIds([element.id])
           setEllipseRadiiCenter(null)
         }}
       />
@@ -544,7 +623,7 @@ function App() {
             style: currentStyle,
           }
           setElements((currentElements) => [...currentElements, element])
-          setSelectedId(element.id)
+          setSelectedIds([element.id])
           setLineSlopeAnchor(null)
         }}
       />
@@ -626,6 +705,21 @@ function App() {
                   onEllipseSubtoolChange={setEllipseSubtool}
                   onArcSubtoolChange={setArcSubtool}
                   onToolChange={(tool) => {
+                    if (tool === 'conic') {
+                      setConicModalOpen(true)
+                      setActiveTool('select')
+                      return
+                    }
+                    if (tool === 'plot') {
+                      setPlotModalOpen(true)
+                      setActiveTool('select')
+                      return
+                    }
+                    if (tool === 'foreach') {
+                      setForeachModalOpen(true)
+                      setActiveTool('select')
+                      return
+                    }
                     setActiveTool(tool)
                     setDraft(null)
                     setLineSlopeAnchor(null)
@@ -634,7 +728,7 @@ function App() {
                     setArcCenterAnglesCenter(null)
                     setIntersectionPickIds([])
                     if (tool === 'intersection') {
-                      setSelectedId(null)
+                      setSelectedIds([])
                     }
                     if (tool === 'axes') {
                       const hasAxes = elementsRef.current.some((e) => e.type === 'axes' || e.type === 'axisLine')
@@ -657,10 +751,9 @@ function App() {
                 elements={elements}
                 gridConfig={gridConfig}
                 lineSubtool={lineSubtool}
-                selectedId={selectedId}
                 onCreate={(element) => {
                   setElements((currentElements) => [...currentElements, element])
-                  setSelectedId(element.id)
+                  setSelectedIds([element.id])
                 }}
                 onDraftChange={setDraft}
                 onLineSlopeAnchorPick={(anchor) => setLineSlopeAnchor(anchor)}
@@ -693,7 +786,25 @@ function App() {
                   })
                 }}
                 intersectionPickIds={intersectionPickIds}
-                onSelect={setSelectedId}
+                onSelect={selectCanvas}
+                onFillPick={(pt) => {
+                  const hit = hitClosedShapeAtPoint(elements, pt)
+                  if (!hit) return
+                  updateElement({
+                    ...hit,
+                    style: normalizeDrawingStyle({
+                      ...hit.style,
+                      fillMode: 'solid',
+                      fillColor: currentStyle.fillColor,
+                      fillOpacity: currentStyle.fillOpacity,
+                    }),
+                  })
+                }}
+                onRegularPolygonTwoPoints={(center, firstVertex) => {
+                  setRegularPolygonCorners({ center, firstVertex })
+                }}
+                polylineClosed={polylineClosed}
+                selectedIds={selectedIds}
                 onViewOriginChange={setViewOrigin}
               />
             </div>
@@ -770,24 +881,45 @@ function App() {
         <div className={`properties-wrapper ${propertiesOpen ? 'open' : ''}`}>
           <PropertiesPanel
             activeTool={activeTool}
-            lineSubtool={lineSubtool}
-            circleSubtool={circleSubtool}
-            ellipseSubtool={ellipseSubtool}
-            arcSubtool={arcSubtool}
             arcAngle={arcAngle}
+            arcSubtool={arcSubtool}
+            circleSubtool={circleSubtool}
+            coordinateInputMode={coordinateInputMode}
             currentStyle={currentStyle}
+            ellipseSubtool={ellipseSubtool}
+            lineSubtool={lineSubtool}
+            polarAngleUnit={polarAngleUnit}
+            polylineClosed={polylineClosed}
             selectedElement={selectedElement}
-            onLineSubtoolChange={setLineSubtool}
-            onCircleSubtoolChange={setCircleSubtool}
-            onEllipseSubtoolChange={setEllipseSubtool}
-            onArcSubtoolChange={setArcSubtool}
+            selectedIds={selectedIds}
             onArcAngleChange={updateArcAngle}
-            onStyleChange={updateStyle}
+            onArcSubtoolChange={setArcSubtool}
+            onCircleSubtoolChange={setCircleSubtool}
+            onCoordinateInputModeChange={setCoordinateInputMode}
             onDelete={(id) => {
               purgeIntersectionPairsForId(id)
               setElements((currentElements) => currentElements.filter((element) => element.id !== id))
-              setSelectedId(null)
+              setSelectedIds([])
             }}
+            onEllipseSubtoolChange={setEllipseSubtool}
+            onLineSubtoolChange={setLineSubtool}
+            onMergeCycleToFill={mergeCycleToFilledPath}
+            onPolarAngleUnitChange={setPolarAngleUnit}
+            onPolarPoint={(r, ang) => {
+              const p = polarInputToCartesian(r, ang, polarAngleUnit)
+              const el: DrawingElement = {
+                id: createId(),
+                type: 'point',
+                center: p,
+                label: '',
+                style: currentStyle,
+              }
+              setElements((els) => [...els, el])
+              setSelectedIds([el.id])
+            }}
+            onPolylineClosedChange={setPolylineClosed}
+            onSplitAtIntersections={splitAtIntersectionMarkers}
+            onStyleChange={updateStyle}
             onUpdate={updateElement}
           />
         </div>
@@ -803,6 +935,59 @@ function App() {
         open={gridSettingsOpen}
         onClose={() => setGridSettingsOpen(false)}
         onSave={setGridConfig}
+      />
+
+      <RegularPolygonModal
+        center={regularPolygonCorners?.center ?? null}
+        firstVertex={regularPolygonCorners?.firstVertex ?? null}
+        open={regularPolygonCorners !== null}
+        onCancel={() => setRegularPolygonCorners(null)}
+        onConfirm={(center, firstVertex, sides) => {
+          const el: DrawingElement = {
+            id: createId(),
+            type: 'regularPolygon',
+            center,
+            firstVertex,
+            sides,
+            style: currentStyle,
+          }
+          setElements((els) => [...els, el])
+          setSelectedIds([el.id])
+          setRegularPolygonCorners(null)
+        }}
+      />
+
+      <ConicModal
+        open={conicModalOpen}
+        onCancel={() => setConicModalOpen(false)}
+        onConfirm={(p) => {
+          const el: DrawingElement = { ...p, id: createId(), style: currentStyle }
+          setElements((els) => [...els, el])
+          setSelectedIds([el.id])
+          setConicModalOpen(false)
+        }}
+      />
+
+      <FunctionPlotModal
+        open={plotModalOpen}
+        onCancel={() => setPlotModalOpen(false)}
+        onConfirm={(p) => {
+          const el: DrawingElement = { ...p, id: createId(), style: currentStyle }
+          setElements((els) => [...els, el])
+          setSelectedIds([el.id])
+          setPlotModalOpen(false)
+        }}
+      />
+
+      <ForeachModal
+        open={foreachModalOpen}
+        onCancel={() => setForeachModalOpen(false)}
+        onConfirm={(p) => {
+          const el: DrawingElement = { ...p, id: createId(), style: currentStyle }
+          setElements((els) => [...els, el])
+          setSelectedIds([el.id])
+          setForeachModalOpen(false)
+        }}
       />
     </main>
   )

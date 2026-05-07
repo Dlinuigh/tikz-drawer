@@ -1,4 +1,12 @@
-import type { DrawingElement, Point, RectangleElement } from '../types/drawing'
+import { sampleConicCurve } from './conicSamples'
+import { sampleFunctionPlot } from './plotSamples'
+import type {
+  DrawingElement,
+  Point,
+  RectangleElement,
+  RegularPolygonElement,
+  SectorElement,
+} from '../types/drawing'
 
 export type CoordinateSystem = {
   width: number
@@ -455,12 +463,43 @@ const ellipsePolyline = (center: Point, xRadius: number, yRadius: number): Point
   return pts
 }
 
+export function regularPolygonVertices(el: RegularPolygonElement): Point[] {
+  const n = Math.max(3, Math.floor(el.sides))
+  const r = distance(el.center, el.firstVertex)
+  const a0 = Math.atan2(el.firstVertex.y - el.center.y, el.firstVertex.x - el.center.x)
+  const verts: Point[] = []
+  for (let i = 0; i < n; i++) {
+    const a = a0 + (2 * Math.PI * i) / n
+    verts.push({ x: el.center.x + r * Math.cos(a), y: el.center.y + r * Math.sin(a) })
+  }
+  return verts
+}
+
 /** 求交用的结构化信息：线段 + 圆信息 + 椭圆信息 + 圆弧信息。 */
 type IntersectInfo = {
   segs: Point[]
   circles: { center: Point; radius: number }[]
   ellipses: { center: Point; xRadius: number; yRadius: number }[]
   arcs: { start: Point; end: Point; sweepAngle: number }[]
+}
+
+function appendSector(el: SectorElement, info: IntersectInfo): void {
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const r = el.radius
+  const p0 = {
+    x: el.center.x + r * Math.cos(toRad(el.startAngleDeg)),
+    y: el.center.y + r * Math.sin(toRad(el.startAngleDeg)),
+  }
+  const p1 = {
+    x: el.center.x + r * Math.cos(toRad(el.endAngleDeg)),
+    y: el.center.y + r * Math.sin(toRad(el.endAngleDeg)),
+  }
+  info.segs.push(el.center, p0, el.center, p1)
+  info.arcs.push({
+    start: p0,
+    end: p1,
+    sweepAngle: el.endAngleDeg - el.startAngleDeg,
+  })
 }
 
 export const computeIntersections = (a: DrawingElement, b: DrawingElement): Point[] => {
@@ -470,7 +509,15 @@ export const computeIntersections = (a: DrawingElement, b: DrawingElement): Poin
     if (el.type === 'line') {
       info.segs = [el.start, el.end]
     } else if (el.type === 'polyline') {
-      for (let i = 0; i < el.points.length - 1; i++) info.segs.push(el.points[i], el.points[i + 1])
+      if (el.closed && el.points.length >= 3) {
+        const v = el.points
+        for (let i = 0; i < v.length; i++) {
+          const j = (i + 1) % v.length
+          info.segs.push(v[i], v[j])
+        }
+      } else {
+        for (let i = 0; i < el.points.length - 1; i++) info.segs.push(el.points[i], el.points[i + 1])
+      }
     } else if (el.type === 'rectangle') {
       info.segs = rectangleEdges(el)
     } else if (el.type === 'circle') {
@@ -501,6 +548,32 @@ export const computeIntersections = (a: DrawingElement, b: DrawingElement): Poin
       } else if (el.orientation === 'y' && hi - lo > axesEps) {
         info.segs.push({ x: ox, y: lo }, { x: ox, y: hi })
       }
+    } else if (el.type === 'polygon') {
+      const v = el.vertices
+      for (let i = 0; i < v.length; i++) {
+        const j = (i + 1) % v.length
+        info.segs.push(v[i], v[j])
+      }
+    } else if (el.type === 'regularPolygon') {
+      const verts = regularPolygonVertices(el)
+      for (let i = 0; i < verts.length; i++) {
+        const j = (i + 1) % verts.length
+        info.segs.push(verts[i], verts[j])
+      }
+    } else if (el.type === 'filledPath') {
+      const v = el.vertices
+      for (let i = 0; i < v.length; i++) {
+        const j = (i + 1) % v.length
+        info.segs.push(v[i], v[j])
+      }
+    } else if (el.type === 'sector') {
+      appendSector(el, info)
+    } else if (el.type === 'conicCurve') {
+      const pts = sampleConicCurve(el)
+      for (let i = 0; i < pts.length - 1; i++) info.segs.push(pts[i], pts[i + 1])
+    } else if (el.type === 'functionPlot') {
+      const pts = sampleFunctionPlot(el)
+      for (let i = 0; i < pts.length - 1; i++) info.segs.push(pts[i], pts[i + 1])
     }
 
     return info
