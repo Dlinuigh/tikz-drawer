@@ -1046,8 +1046,8 @@ input {
 
 .shape {
   cursor: pointer;
-  fill: none;
-  pointer-events: stroke;
+  /* 填充由元素上的 fill / fillOpacity 控制，勿在此写 fill:none（会盖住画布填充预览） */
+  pointer-events: painted;
   stroke-linecap: round;
   stroke-linejoin: round;
 }

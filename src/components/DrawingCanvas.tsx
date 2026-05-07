@@ -1,5 +1,5 @@
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { expandForeachList } from '../lib/foreachExpand'
 import type { CoordinateSystem } from '../lib/geometry'
 import {
@@ -12,6 +12,7 @@ import {
 } from '../lib/geometry'
 import { sampleConicCurve } from '../lib/conicSamples'
 import { sampleFunctionPlot } from '../lib/plotSamples'
+import { elementSvgBounds, svgAabbIntersects } from '../lib/elementSvgBounds'
 import { svgFillStrokePreview } from '../lib/styleHelpers'
 import {
   axesNameLabelOffset,
@@ -53,6 +54,7 @@ type DrawingCanvasProps = {
   onCreate: (element: DrawingElement) => void
   onDraftChange: (draft: DraftElement | null) => void
   onSelect: (id: string | null, additive?: boolean) => void
+  onBoxSelect?: (ids: string[], additive: boolean) => void
   onFillPick?: (point: Point) => void
   onRegularPolygonTwoPoints?: (center: Point, firstVertex: Point) => void
   onLineSlopeAnchorPick: (anchor: Point) => void
@@ -226,6 +228,7 @@ export function DrawingCanvas({
   onCreate,
   onDraftChange,
   onSelect,
+  onBoxSelect,
   onFillPick,
   onRegularPolygonTwoPoints,
   onLineSlopeAnchorPick,
@@ -236,6 +239,15 @@ export function DrawingCanvas({
   intersectionPickIds,
 }: DrawingCanvasProps) {
   const panLast = useRef<{ x: number; y: number } | null>(null)
+  const marqueeStartRef = useRef<Point | null>(null)
+  const marqueeLastRef = useRef<Point | null>(null)
+  const marqueePointerIdRef = useRef<number | null>(null)
+  const [marqueeRect, setMarqueeRect] = useState<{
+    x: number
+    y: number
+    width: number
+    height: number
+  } | null>(null)
   const skipNextClick = useRef(false)
   const draftRef = useRef(draft)
   draftRef.current = draft
@@ -456,12 +468,58 @@ export function DrawingCanvas({
   }
 
   const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (!event.altKey && event.button !== 1) return
-    event.preventDefault()
-    panLast.current = { x: event.clientX, y: event.clientY }
+    if (event.altKey || event.button === 1) {
+      event.preventDefault()
+      panLast.current = { x: event.clientX, y: event.clientY }
+      return
+    }
+
+    if (
+      activeTool === 'select' &&
+      event.button === 0 &&
+      onBoxSelect &&
+      !draft &&
+      marqueePointerIdRef.current === null
+    ) {
+      const t = event.target as Element
+      const isMarqueeBackdrop =
+        t === event.currentTarget ||
+        t.classList.contains('canvas-background') ||
+        t.classList.contains('grid-line') ||
+        t.classList.contains('axis')
+      if (isMarqueeBackdrop) {
+        const p = getSvgPoint(event, cs)
+        marqueeStartRef.current = p
+        marqueeLastRef.current = p
+        setMarqueeRect(null)
+        marqueePointerIdRef.current = event.pointerId
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId)
+        } catch {
+          /* capture unavailable */
+        }
+      }
+    }
   }
 
   const handlePointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (marqueePointerIdRef.current === event.pointerId && marqueeStartRef.current) {
+      const p = getSvgPoint(event, cs)
+      marqueeLastRef.current = p
+      const x1 = marqueeStartRef.current.x
+      const y1 = marqueeStartRef.current.y
+      setMarqueeRect({
+        x: Math.min(x1, p.x),
+        y: Math.min(y1, p.y),
+        width: Math.abs(p.x - x1),
+        height: Math.abs(p.y - y1),
+      })
+      if (Math.abs(p.x - x1) > 2 || Math.abs(p.y - y1) > 2) {
+        skipNextClick.current = true
+      }
+      return
+    }
+
     if (!panLast.current) return
     const dx = event.clientX - panLast.current.x
     const dy = event.clientY - panLast.current.y
@@ -472,7 +530,57 @@ export function DrawingCanvas({
     onViewOriginChange({ x: cs.origin.x + dx, y: cs.origin.y + dy })
   }
 
-  const handlePointerUp = () => {
+  const finishMarqueePointer = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (marqueePointerIdRef.current !== event.pointerId || !onBoxSelect || !marqueeStartRef.current) {
+      return
+    }
+    const start = marqueeStartRef.current
+    const end = marqueeLastRef.current ?? start
+    const w = Math.abs(end.x - start.x)
+    const h = Math.abs(end.y - start.y)
+    marqueePointerIdRef.current = null
+    marqueeStartRef.current = null
+    marqueeLastRef.current = null
+    setMarqueeRect(null)
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch {
+      /* already released */
+    }
+    if (w >= 4 || h >= 4) {
+      const box = {
+        minX: Math.min(start.x, end.x),
+        minY: Math.min(start.y, end.y),
+        maxX: Math.max(start.x, end.x),
+        maxY: Math.max(start.y, end.y),
+      }
+      const ids: string[] = []
+      for (const el of elements) {
+        const b = elementSvgBounds(el, cs)
+        if (b && svgAabbIntersects(box, b)) ids.push(el.id)
+      }
+      skipNextClick.current = true
+      onBoxSelect(ids, event.shiftKey)
+    }
+  }
+
+  const handlePointerUp = (event: ReactPointerEvent<SVGSVGElement>) => {
+    finishMarqueePointer(event)
+    panLast.current = null
+  }
+
+  const handlePointerCancel = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (marqueePointerIdRef.current === event.pointerId) {
+      marqueePointerIdRef.current = null
+      marqueeStartRef.current = null
+      marqueeLastRef.current = null
+      setMarqueeRect(null)
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      } catch {
+        /* already released */
+      }
+    }
     panLast.current = null
   }
 
@@ -524,6 +632,7 @@ export function DrawingCanvas({
           key={element.id}
           {...commonProps}
           d={arcPath(element.start, element.end, element.sweepAngle, cs)}
+          fill="none"
           onClick={handleElementClick}
         />
       )
@@ -1298,7 +1407,11 @@ export function DrawingCanvas({
         onClick={handleCanvasClick}
         onMouseMove={handleMouseMove}
         onPointerDown={handlePointerDown}
-        onPointerLeave={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onPointerLeave={() => {
+          if (marqueePointerIdRef.current !== null) return
+          panLast.current = null
+        }}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
       >
@@ -1343,6 +1456,20 @@ export function DrawingCanvas({
         <line className="axis" x1={origin.x} x2={origin.x} y1="0" y2={cs.height} />
         {elements.map((element) => renderElement(element))}
         {draftElement && renderElement(draftElement, true)}
+        {marqueeRect && marqueeRect.width > 0 && marqueeRect.height > 0 && (
+          <rect
+            className="marquee-selection"
+            fill="rgba(59, 130, 246, 0.12)"
+            height={marqueeRect.height}
+            pointerEvents="none"
+            stroke="rgba(37, 99, 235, 0.85)"
+            strokeDasharray="4 3"
+            strokeWidth={1}
+            width={marqueeRect.width}
+            x={marqueeRect.x}
+            y={marqueeRect.y}
+          />
+        )}
       </svg>
     </div>
   )

@@ -146,6 +146,14 @@ function App() {
       setSelectedIds([id])
     }
   }, [])
+
+  const boxSelectCanvas = useCallback((ids: string[], additive: boolean) => {
+    if (additive) {
+      setSelectedIds((prev) => [...new Set([...prev, ...ids])])
+    } else {
+      setSelectedIds(ids)
+    }
+  }, [])
   const tikzCode = useMemo(() => buildTikzPicture(elements, gridConfig), [elements, gridConfig])
 
   // Refs for menu event handlers to avoid stale closures
@@ -833,6 +841,7 @@ function App() {
                 }}
                 intersectionPickIds={intersectionPickIds}
                 onSelect={selectCanvas}
+                onBoxSelect={boxSelectCanvas}
                 onFillPick={(pt) => {
                   const hit = hitClosedShapeAtPoint(elements, pt)
                   if (!hit) return
