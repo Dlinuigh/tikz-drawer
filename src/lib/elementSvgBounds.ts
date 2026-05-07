@@ -1,4 +1,5 @@
 import type { CoordinateSystem } from './geometry'
+import { ellipseArcPoint } from './ellipseArcGeometry'
 import { distance, getArcGeometry, regularPolygonVertices, tikzToSvg } from './geometry'
 import { concaveBracketArcParams } from './sectorBracketMath'
 import { majorArcSignedSweep } from './sectorAngles'
@@ -60,6 +61,31 @@ export function elementSvgBounds(element: DrawingElement, cs: CoordinateSystem):
       return { minX: c.x - rx - pad, minY: c.y - ry - pad, maxX: c.x + rx + pad, maxY: c.y + ry + pad }
     }
     case 'arc': {
+      if (
+        element.definitionMode === 'ellipseCenterRadiiAngles' &&
+        element.center &&
+        element.radiusX !== undefined &&
+        element.radiusY !== undefined &&
+        element.startAngle !== undefined &&
+        element.endAngle !== undefined
+      ) {
+        const rx = element.radiusX
+        const ry = element.radiusY
+        const rot = element.ellipseRotationDeg ?? 0
+        const a0 = element.startAngle
+        const a1 = element.endAngle
+        let delta = a1 - a0
+        while (delta > 360) delta -= 360
+        while (delta < -360) delta += 360
+        const n = Math.max(16, Math.ceil((Math.abs(delta) / 360) * 48))
+        const pts: Point[] = []
+        for (let i = 0; i <= n; i++) {
+          const t = i / n
+          const ang = a0 + delta * t
+          pts.push(ellipseArcPoint(element.center, rx, ry, ang, rot))
+        }
+        return expandAabb(boundsFromTikzPoints(pts, cs)!, pad)
+      }
       const pts: Point[] = [element.start, element.end]
       const g = getArcGeometry(element.start, element.end, element.sweepAngle)
       if (g) {

@@ -32,7 +32,7 @@ export const defaultGridConfig: GridConfig = {
 }
 
 export type LineSubtool = 'twoPoints' | 'pointSlope'
-export type ArcSubtool = 'sweepAngle' | 'centerRadiusAngles'
+export type ArcSubtool = 'sweepAngle' | 'centerRadiusAngles' | 'ellipseCenterRadiiAngles'
 export type CircleSubtool = 'centerRadius' | 'centerRadiusValue'
 export type EllipseSubtool = 'centerRadii' | 'centerRadiiValue'
 
@@ -113,13 +113,18 @@ export type ArcElement = {
   end: Point
   sweepAngle: number
   style: DrawingStyle
-  /** 定义方式：'sweepAngle'（默认，用起点+终点+扫过角）| 'centerRadiusAngles'（圆心+半径+起止角度） */
-  definitionMode?: 'sweepAngle' | 'centerRadiusAngles'
+  /** 定义方式：'sweepAngle'（默认，用起点+终点+扫过角）| 'centerRadiusAngles'（圆心+半径+起止角度）| 'ellipseCenterRadiiAngles'（椭圆弧） */
+  definitionMode?: 'sweepAngle' | 'centerRadiusAngles' | 'ellipseCenterRadiiAngles'
   /** 当 definitionMode === 'centerRadiusAngles' 时使用 */
   center?: Point
   startAngle?: number
   endAngle?: number
   radius?: number
+  /** definitionMode === 'ellipseCenterRadiiAngles'：x/y 半轴（TikZ 坐标单位） */
+  radiusX?: number
+  radiusY?: number
+  /** 椭圆主轴相对 x 轴逆时针角度（度），默认 0 */
+  ellipseRotationDeg?: number
 }
 
 export type RectangleElement = {
@@ -249,6 +254,8 @@ export type FunctionPlotElement = {
   /** Optional implicit F(x,y)=0 (very small MVP contour); when set, explicit fields ignored for sampling */
   implicitEquation: string | null
   style: DrawingStyle
+  /** 平移/变换时在采样结果上叠加（TikZ 坐标） */
+  plotOffset?: Point
 }
 
 export type TikzForeachElement = {
@@ -262,6 +269,8 @@ export type TikzForeachElement = {
   bodyTemplate: string
   previewLimit: number
   style: DrawingStyle
+  /** 画布/导出整体平移（TikZ 坐标） */
+  scopeShift?: Point
 }
 
 export type PointElement = {

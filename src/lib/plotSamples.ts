@@ -65,23 +65,28 @@ export function sampleImplicit(
 export function sampleFunctionPlot(el: FunctionPlotElement): Point[] {
   const n = Math.max(8, Math.min(500, Math.floor(el.samples)))
   const pts: Point[] = []
+  const ox = el.plotOffset?.x ?? 0
+  const oy = el.plotOffset?.y ?? 0
 
   if (el.implicitEquation?.trim()) {
-    return sampleImplicit(el.implicitEquation, el.domainMin, el.domainMax, el.domainMin, el.domainMax, Math.floor(Math.sqrt(n)))
+    return sampleImplicit(el.implicitEquation, el.domainMin, el.domainMax, el.domainMin, el.domainMax, Math.floor(Math.sqrt(n))).map(
+      (p) => ({ x: p.x + ox, y: p.y + oy }),
+    )
   }
 
   const mode = el.coordinateMode
+
   for (let i = 0; i <= n; i++) {
     const u = el.domainMin + ((el.domainMax - el.domainMin) * i) / n
     try {
       if (mode === 'cartesian') {
         const x = u
         const y = evaluateExpression(el.expression, 'cartesian', x)
-        if (Number.isFinite(y)) pts.push({ x, y })
+        if (Number.isFinite(y)) pts.push({ x: x + ox, y: y + oy })
       } else {
         const theta = u
         const r = evaluateExpression(el.expression, 'polar', theta)
-        if (Number.isFinite(r)) pts.push({ x: r * Math.cos(theta), y: r * Math.sin(theta) })
+        if (Number.isFinite(r)) pts.push({ x: r * Math.cos(theta) + ox, y: r * Math.sin(theta) + oy })
       }
     } catch {
       /* skip sample */

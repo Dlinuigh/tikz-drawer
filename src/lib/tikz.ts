@@ -21,6 +21,7 @@ import {
   tickValuesInRange,
 } from './axes'
 import { sampleConicCurve } from './conicSamples'
+import { ellipseArcPoint } from './ellipseArcGeometry'
 import { distance, formatNumber, getArcGeometry, pointToTikz, regularPolygonVertices } from './geometry'
 import { sampleFunctionPlot } from './plotSamples'
 import { concaveBracketArcParams, majorArcPieTikzMirrorArcCenter } from './sectorBracketMath'
@@ -126,6 +127,28 @@ const lineToTikz = (element: DrawingElement): string => {
 }
 
 const arcToTikz = (element: ArcElement): string => {
+  if (
+    element.definitionMode === 'ellipseCenterRadiiAngles' &&
+    element.center &&
+    element.radiusX !== undefined &&
+    element.radiusY !== undefined &&
+    element.startAngle !== undefined &&
+    element.endAngle !== undefined
+  ) {
+    const sa = element.startAngle
+    const ea = element.endAngle
+    const rx = element.radiusX
+    const ry = element.radiusY
+    const rot = element.ellipseRotationDeg ?? 0
+    const computedStart = ellipseArcPoint(element.center, rx, ry, sa, rot)
+    const rotOpt = Math.abs(rot) > 1e-9 ? `, rotate=${formatNumber(rot)}` : ''
+    return [
+      `% arc (ellipse): center (${formatNumber(element.center.x)}, ${formatNumber(element.center.y)}), rx=${formatNumber(rx)}, ry=${formatNumber(ry)}`,
+      `\\draw${styleToTikzOptions(element.style)} ${pointToTikz(computedStart)}`,
+      `arc[start angle=${formatNumber(sa)}, end angle=${formatNumber(ea)}, x radius=${formatNumber(rx)}, y radius=${formatNumber(ry)}${rotOpt}];`,
+    ].join('\n')
+  }
+
   if (element.definitionMode === 'centerRadiusAngles' && element.center && element.startAngle !== undefined && element.endAngle !== undefined && element.radius !== undefined) {
     // mode 2: 中心+半径+起止角度
     const startAngle = element.startAngle
@@ -288,15 +311,27 @@ const conicToTikz = (element: DrawingElement): string => {
 
 const functionPlotToTikz = (element: DrawingElement): string => {
   if (element.type !== 'functionPlot') return ''
-  const pts = sampleFunctionPlot(element)
+  const ox = element.plotOffset?.x ?? 0
+  const oy = element.plotOffset?.y ?? 0
+  const pts = sampleFunctionPlot({ ...element, plotOffset: { x: 0, y: 0 } })
   if (pts.length < 2) return `% skipped empty plot ${element.id}`
-  return `\\draw${styleToTikzOptions(element.style)} plot coordinates { ${plotCoordinatesLine(pts)} };`
+  const draw = `\\draw${styleToTikzOptions(element.style)} plot coordinates { ${plotCoordinatesLine(pts)} };`
+  if (Math.abs(ox) > 1e-12 || Math.abs(oy) > 1e-12) {
+    return `\\begin{scope}[shift={(${formatNumber(ox)},${formatNumber(oy)})}]\n${draw}\n\\end{scope}`
+  }
+  return draw
 }
 
 const tikzForeachToTikz = (element: DrawingElement): string => {
   if (element.type !== 'tikzForeach') return ''
   const macro = foreachMacro(element.iteratorName)
-  return `% foreach ${element.id}\n\\foreach ${macro} in {${element.listExpr}} {\n${element.bodyTemplate}\n}`
+  const inner = `\\foreach ${macro} in {${element.listExpr}} {\n${element.bodyTemplate}\n}`
+  const sx = element.scopeShift?.x ?? 0
+  const sy = element.scopeShift?.y ?? 0
+  if (Math.abs(sx) > 1e-12 || Math.abs(sy) > 1e-12) {
+    return `% foreach ${element.id}\n\\begin{scope}[shift={(${formatNumber(sx)},${formatNumber(sy)})}]\n${inner}\\end{scope}`
+  }
+  return `% foreach ${element.id}\n${inner}`
 }
 
 const tickMarkBodyTikz = (tick: { value: number; label?: string }): string => {

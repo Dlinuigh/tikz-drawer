@@ -28,24 +28,24 @@ type ToolbarProps = {
 
 type SubmenuKey = 'line' | 'arc' | 'circle' | 'ellipse' | 'closedFill' | 'sector'
 
-const primaryTools: Array<{ value: Tool; label: string; submenu?: SubmenuKey }> = [
-  { value: 'select', label: '选择' },
-  { value: 'point', label: '点' },
-  { value: 'line', label: '直线', submenu: 'line' },
-  { value: 'rectangle', label: '矩形', submenu: 'closedFill' },
-  { value: 'circle', label: '圆', submenu: 'circle' },
-  { value: 'ellipse', label: '椭圆', submenu: 'ellipse' },
-  { value: 'polyline', label: '多段线' },
-  { value: 'polygon', label: '多边形', submenu: 'closedFill' },
-  { value: 'arc', label: '圆弧', submenu: 'arc' },
-  { value: 'sector', label: '扇形', submenu: 'sector' },
-  { value: 'regularPolygon', label: '正多边形', submenu: 'closedFill' },
-  { value: 'axes', label: '坐标轴' },
-  { value: 'intersection', label: '交点' },
-  { value: 'fillPick', label: '填色' },
-  { value: 'conic', label: '圆锥曲线' },
-  { value: 'plot', label: '函数图' },
-  { value: 'foreach', label: 'Foreach' },
+const primaryTools: Array<{ value: Tool; label: string; hint: string; submenu?: SubmenuKey }> = [
+  { value: 'select', label: '选择', hint: '点选图元，Shift 加选；空白拖拽框选。' },
+  { value: 'point', label: '点', hint: '放置坐标点。画布点击时按住 Ctrl 可不吸附网格。' },
+  { value: 'line', label: '直线', hint: '两点画线；子菜单可选点斜式。Ctrl：取原始坐标。', submenu: 'line' },
+  { value: 'rectangle', label: '矩形', hint: '对角两点；子菜单设新建时填充。Ctrl：不吸附。', submenu: 'closedFill' },
+  { value: 'circle', label: '圆', hint: '圆心+圆周点或圆心+半径数值。Ctrl：不吸附。', submenu: 'circle' },
+  { value: 'ellipse', label: '椭圆', hint: '中心+形状点或中心+半轴数值。Ctrl：不吸附。', submenu: 'ellipse' },
+  { value: 'polyline', label: '多段线', hint: '逐点添加，Esc 结束。Ctrl：各点不吸附。' },
+  { value: 'polygon', label: '多边形', hint: '逐点围成封闭多边形。Ctrl：不吸附。', submenu: 'closedFill' },
+  { value: 'arc', label: '圆弧', hint: '圆/椭圆弧子菜单；扫角或圆心模式。Ctrl：不吸附。', submenu: 'arc' },
+  { value: 'sector', label: '扇形', hint: '依子模式多次点击。Ctrl：不吸附。', submenu: 'sector' },
+  { value: 'regularPolygon', label: '正多边形', hint: '中心与第一个顶点，再在对话框设边数。', submenu: 'closedFill' },
+  { value: 'axes', label: '坐标轴', hint: '首次创建时弹出范围；原点为 (0,0)。' },
+  { value: 'intersection', label: '交点', hint: '依次点击两个图元计算交点并命名。' },
+  { value: 'fillPick', label: '填色', hint: '点击封闭区域填充当前样式。' },
+  { value: 'conic', label: '圆锥曲线', hint: '在对话框中参数化圆锥曲线。' },
+  { value: 'plot', label: '函数图', hint: '显式/隐式采样绘图；可选生成零点与极值点。' },
+  { value: 'foreach', label: 'Foreach', hint: '写入 TikZ \\foreach；画布仅简单预览。' },
 ]
 
 const lineSubtools: Array<{ value: LineSubtool; label: string }> = [
@@ -63,9 +63,14 @@ const ellipseSubtools: Array<{ value: EllipseSubtool; label: string }> = [
   { value: 'centerRadiiValue', label: '中心+半轴数值' },
 ]
 
-const arcSubtools: Array<{ value: ArcSubtool; label: string }> = [
-  { value: 'sweepAngle', label: '两点+扫过角' },
-  { value: 'centerRadiusAngles', label: '圆心+半径+角度' },
+const arcSubtools: Array<{ value: ArcSubtool; label: string; title: string }> = [
+  { value: 'sweepAngle', label: '两点+扫过角', title: '起点、终点，扫过角由属性栏/选中圆弧调节。' },
+  { value: 'centerRadiusAngles', label: '圆心+半径+角度', title: '先点圆心，再在对话框输入半径与起止角（度）。' },
+  {
+    value: 'ellipseCenterRadiiAngles',
+    label: '椭圆弧',
+    title: '先点椭圆弧所在椭圆的中心，再输入 x/y 半轴与起止角、轴旋转。',
+  },
 ]
 
 function ClosedFillButtons({
@@ -160,7 +165,7 @@ export function Toolbar({
             key={tool.value}
             className={`tool-btn ${activeTool === tool.value ? 'active' : ''}`}
             type="button"
-            title={tool.label}
+            title={tool.hint}
             onClick={() => handlePrimaryClick(tool.value, tool.submenu)}
           >
             {tool.label}
@@ -236,6 +241,7 @@ export function Toolbar({
             <button
               key={sub.value}
               className={`tool-menu-item ${arcSubtool === sub.value ? 'active' : ''}`}
+              title={sub.title}
               type="button"
               onClick={() => {
                 onArcSubtoolChange(sub.value)

@@ -381,6 +381,176 @@ export function ArcCenterRadiusAnglesModal({ open, center, onConfirm, onCancel }
   )
 }
 
+/* ──────────── 椭圆弧：中心 + 两半轴 + 起止角 + 轴旋转 ──────────── */
+
+type EllipseArcAnglesModalProps = {
+  open: boolean
+  center: Point | null
+  onConfirm: (
+    center: Point,
+    radiusX: number,
+    radiusY: number,
+    startAngle: number,
+    endAngle: number,
+    ellipseRotationDeg: number,
+  ) => void
+  onCancel: () => void
+}
+
+function EllipseArcAnglesForm({
+  center,
+  onConfirm,
+  onCancel,
+}: {
+  center: Point
+  onConfirm: EllipseArcAnglesModalProps['onConfirm']
+  onCancel: () => void
+}) {
+  const [radiusX, setRadiusX] = useState('2')
+  const [radiusY, setRadiusY] = useState('1')
+  const [startAngle, setStartAngle] = useState('0')
+  const [endAngle, setEndAngle] = useState('90')
+  const [ellipseRotationDeg, setEllipseRotationDeg] = useState('0')
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = () => {
+    const rx = parseFlexibleNumber(radiusX)
+    const ry = parseFlexibleNumber(radiusY)
+    const sa = parseFlexibleNumber(startAngle)
+    const ea = parseFlexibleNumber(endAngle)
+    const rot = parseFlexibleNumber(ellipseRotationDeg)
+    if (Number.isNaN(rx) || rx <= 0 || Number.isNaN(ry) || ry <= 0) {
+      setError('请输入有效的正数半轴。')
+      return
+    }
+    if (Number.isNaN(sa) || Number.isNaN(ea) || Number.isNaN(rot)) {
+      setError('请输入有效的角度（度）。')
+      return
+    }
+    if (sa === ea) {
+      setError('起始角和终止角不能相同。')
+      return
+    }
+    onConfirm(center, rx, ry, sa, ea, rot)
+  }
+
+  return (
+    <div className="modal-panel" role="dialog" aria-labelledby="ellipse-arc-modal-title" onMouseDown={(e) => e.stopPropagation()}>
+      <h3 id="ellipse-arc-modal-title">椭圆弧（圆心 + 两半轴 + 角度）</h3>
+      <p className="hint">
+        TikZ：<code>arc[start angle=α, end angle=β, x radius=..., y radius=..., rotate=γ]</code>
+        <br />
+        圆心 ({center.x}, {center.y})；偏心角以椭圆局部坐标计量；轴旋转 γ 为逆时针（度）。
+      </p>
+      <label>
+        x 半轴（rx）
+        <input value={radiusX} onChange={(e) => setRadiusX(e.target.value)} type="text" inputMode="decimal" />
+      </label>
+      <label>
+        y 半轴（ry）
+        <input value={radiusY} onChange={(e) => setRadiusY(e.target.value)} type="text" inputMode="decimal" />
+      </label>
+      <label>
+        椭圆主轴旋转（°）
+        <input value={ellipseRotationDeg} onChange={(e) => setEllipseRotationDeg(e.target.value)} type="text" inputMode="decimal" />
+      </label>
+      <label>
+        起始角（°）
+        <input value={startAngle} onChange={(e) => setStartAngle(e.target.value)} type="text" inputMode="decimal" />
+      </label>
+      <label>
+        终止角（°）
+        <input value={endAngle} onChange={(e) => setEndAngle(e.target.value)} type="text" inputMode="decimal" />
+      </label>
+      {error && <p className="modal-error">{error}</p>}
+      <div className="modal-actions">
+        <button type="button" onClick={onCancel}>取消</button>
+        <button type="button" className="primary" onClick={submit}>确定</button>
+      </div>
+    </div>
+  )
+}
+
+export function EllipseArcAnglesModal({ open, center, onConfirm, onCancel }: EllipseArcAnglesModalProps) {
+  if (!open || !center) return null
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <EllipseArcAnglesForm key={`${center.x},${center.y}`} center={center} onConfirm={onConfirm} onCancel={onCancel} />
+    </div>
+  )
+}
+
+type RotateSelectionModalProps = {
+  open: boolean
+  /** center 为 null 时表示绕选中集合包围盒中心 */
+  onConfirm: (degrees: number, center: Point | null) => void
+  onCancel: () => void
+}
+
+export function RotateSelectionModal({ open, onConfirm, onCancel }: RotateSelectionModalProps) {
+  const [text, setText] = useState('45')
+  const [customCenter, setCustomCenter] = useState(false)
+  const [cxText, setCxText] = useState('0')
+  const [cyText, setCyText] = useState('0')
+  const [error, setError] = useState<string | null>(null)
+
+  if (!open) return null
+
+  const submit = () => {
+    const d = parseFlexibleNumber(text)
+    if (Number.isNaN(d)) {
+      setError('请输入有效角度（度）。逆时针为正，负值为顺时针。')
+      return
+    }
+    let center: Point | null = null
+    if (customCenter) {
+      const cx = parseFlexibleNumber(cxText)
+      const cy = parseFlexibleNumber(cyText)
+      if (Number.isNaN(cx) || Number.isNaN(cy)) {
+        setError('自定义中心请输入有效的 x、y（TikZ 坐标）。')
+        return
+      }
+      center = { x: cx, y: cy }
+    }
+    onConfirm(d, center)
+    setError(null)
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <div className="modal-panel" role="dialog" onMouseDown={(e) => e.stopPropagation()}>
+        <h3>旋转选中图元</h3>
+        <p className="hint">角度单位为度；逆时针为正，负值表示顺时针。默认绕选中集合包围盒中心；可勾选自定义旋转中心。</p>
+        <label>
+          旋转角（°）
+          <input value={text} onChange={(e) => setText(e.target.value)} type="text" inputMode="decimal" />
+        </label>
+        <label className="checkbox-row">
+          <input checked={customCenter} type="checkbox" onChange={(e) => setCustomCenter(e.target.checked)} />
+          自定义旋转中心（TikZ 坐标）
+        </label>
+        {customCenter && (
+          <>
+            <label>
+              中心 x
+              <input value={cxText} onChange={(e) => setCxText(e.target.value)} type="text" inputMode="decimal" />
+            </label>
+            <label>
+              中心 y
+              <input value={cyText} onChange={(e) => setCyText(e.target.value)} type="text" inputMode="decimal" />
+            </label>
+          </>
+        )}
+        {error && <p className="modal-error">{error}</p>}
+        <div className="modal-actions">
+          <button type="button" onClick={onCancel}>取消</button>
+          <button type="button" className="primary" onClick={submit}>确定</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function IntersectionModal({ open, points, onConfirm, onCancel }: IntersectionModalProps) {
   if (!open) return null
   return (
@@ -630,7 +800,7 @@ type PlotPayload = Omit<FunctionPlotElement, 'id' | 'style'>
 
 type FunctionPlotModalProps = {
   open: boolean
-  onConfirm: (partial: PlotPayload) => void
+  onConfirm: (partial: PlotPayload, options: { addMarkers: boolean }) => void
   onCancel: () => void
 }
 
@@ -641,6 +811,7 @@ export function FunctionPlotModal({ open, onConfirm, onCancel }: FunctionPlotMod
   const [domainMin, setDomainMin] = useState('-6.28')
   const [domainMax, setDomainMax] = useState('6.28')
   const [samples, setSamples] = useState('120')
+  const [addMarkers, setAddMarkers] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   if (!open) return null
@@ -653,15 +824,18 @@ export function FunctionPlotModal({ open, onConfirm, onCancel }: FunctionPlotMod
       setError('定义域或采样无效')
       return
     }
-    onConfirm({
-      type: 'functionPlot',
-      expression: implicit.trim() ? '0' : expression.trim(),
-      coordinateMode: mode,
-      domainMin: d0,
-      domainMax: d1,
-      samples: ns,
-      implicitEquation: implicit.trim() || null,
-    })
+    onConfirm(
+      {
+        type: 'functionPlot',
+        expression: implicit.trim() ? '0' : expression.trim(),
+        coordinateMode: mode,
+        domainMin: d0,
+        domainMax: d1,
+        samples: ns,
+        implicitEquation: implicit.trim() || null,
+      },
+      { addMarkers },
+    )
     setError(null)
   }
 
@@ -697,6 +871,10 @@ export function FunctionPlotModal({ open, onConfirm, onCancel }: FunctionPlotMod
           采样
           <input value={samples} onChange={(e) => setSamples(e.target.value)} />
         </label>
+        <label className="checkbox-row">
+          <input checked={addMarkers} type="checkbox" onChange={(e) => setAddMarkers(e.target.checked)} />
+          创建零点与极值点（仅笛卡尔显式 y=f(x)；数值近似）
+        </label>
         {error && <p className="modal-error">{error}</p>}
         <div className="modal-actions">
           <button type="button" onClick={onCancel}>取消</button>
@@ -715,14 +893,47 @@ type ForeachModalProps = {
   onCancel: () => void
 }
 
+const FOREACH_BODY_PRESETS: Array<{ label: string; value: string }> = [
+  { label: '水平短线', value: String.raw`\draw (0,\i) -- (1,\i);` },
+  { label: '竖直短线', value: String.raw`\draw (\i,0) -- (\i,1);` },
+  { label: '网格点', value: String.raw`\fill (\i,0) circle (1pt);` },
+  { label: '自定义…', value: '' },
+]
+
 export function ForeachModal({ open, onConfirm, onCancel }: ForeachModalProps) {
   const [iteratorName, setIteratorName] = useState('i')
   const [listExpr, setListExpr] = useState('1,...,5')
   const [bodyTemplate, setBodyTemplate] = useState(String.raw`\draw (0,\i) -- (1,\i);`)
   const [previewLimit, setPreviewLimit] = useState('8')
+  const [rangeFrom, setRangeFrom] = useState('1')
+  const [rangeTo, setRangeTo] = useState('5')
+  const [rangeStep, setRangeStep] = useState('1')
+  const [bodyPreset, setBodyPreset] = useState('水平短线')
   const [error, setError] = useState<string | null>(null)
 
   if (!open) return null
+
+  const applyRangeToList = () => {
+    const a = parseFlexibleNumber(rangeFrom)
+    const b = parseFlexibleNumber(rangeTo)
+    const s = parseFlexibleNumber(rangeStep)
+    if (Number.isNaN(a) || Number.isNaN(b) || Number.isNaN(s) || s === 0) {
+      setError('列表生成：请输入有效数字且步长非 0')
+      return
+    }
+    if (s === 1) {
+      setListExpr(`${a},...,${b}`)
+    } else {
+      setListExpr(`${a},${a + s},...,${b}`)
+    }
+    setError(null)
+  }
+
+  const onPresetChange = (label: string) => {
+    setBodyPreset(label)
+    const p = FOREACH_BODY_PRESETS.find((x) => x.label === label)
+    if (p && p.value) setBodyTemplate(p.value)
+  }
 
   const submit = () => {
     const pl = Number.parseInt(previewLimit, 10)
@@ -748,21 +959,49 @@ export function ForeachModal({ open, onConfirm, onCancel }: ForeachModalProps) {
     <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
       <div className="modal-panel" role="dialog" onMouseDown={(e) => e.stopPropagation()}>
         <h3>TikZ foreach</h3>
-        <p className="hint">正文将原样写入导出；画布仅解析简单 <code>{'\\draw (x,y)--(x,y)'}</code> 预览。</p>
+        <p className="hint">
+          导出时循环体原样写入；画布仅尝试预览包含 <code>{'\\draw (x,y)--(x,y)'}</code> 的简单片段。变量在正文里用
+          <code>{'\\变量名'}</code> 或 <code>#1</code>（与迭代名对应）。
+        </p>
         <label>
-          变量名（不写反斜杠）
+          迭代变量名（导出时会加反斜杠）
           <input value={iteratorName} onChange={(e) => setIteratorName(e.target.value)} />
         </label>
+        <p className="hint">示例：<code>i</code> → 正文中 <code>{'\\i'}</code>。</p>
         <label>
-          列表
+          列表表达式（TikZ）
           <input value={listExpr} onChange={(e) => setListExpr(e.target.value)} />
         </label>
+        <p className="hint">例如 <code>1,...,10</code>、<code>{'{2,4,6}'}</code>，或算术序列 <code>0,2,...,8</code>。</p>
+        <div className="modal-inline-row">
+          <label>
+            起始
+            <input value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} />
+          </label>
+          <label>
+            结束
+            <input value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} />
+          </label>
+          <label>
+            步长
+            <input value={rangeStep} onChange={(e) => setRangeStep(e.target.value)} />
+          </label>
+          <button type="button" className="secondary" onClick={applyRangeToList}>填入列表</button>
+        </div>
         <label>
-          循环体
+          循环体预设
+          <select value={bodyPreset} onChange={(e) => onPresetChange(e.target.value)}>
+            {FOREACH_BODY_PRESETS.map((p) => (
+              <option key={p.label} value={p.label}>{p.label}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          循环体（LaTeX）
           <textarea rows={4} value={bodyTemplate} onChange={(e) => setBodyTemplate(e.target.value)} />
         </label>
         <label>
-          预览展开上限
+          画布预览展开上限（防止过多线段卡顿）
           <input value={previewLimit} onChange={(e) => setPreviewLimit(e.target.value)} />
         </label>
         {error && <p className="modal-error">{error}</p>}

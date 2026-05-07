@@ -59,12 +59,66 @@ export const snapTikzPoint = (point: Point, coordinateSystem = defaultCoordinate
   }
 }
 
+/** When Ctrl is held, skip grid snapping (use raw TikZ point under cursor). */
+export const maybeSnapTikzPoint = (
+  point: Point,
+  ctrlKey: boolean,
+  coordinateSystem = defaultCoordinateSystem,
+  gridStep?: number,
+): Point => {
+  if (ctrlKey) return point
+  return snapTikzPoint(point, coordinateSystem, gridStep)
+}
+
+/** Snap a translation vector so moved geometry tends to land on grid (when snap on). */
+export const snapTikzDelta = (
+  dx: number,
+  dy: number,
+  coordinateSystem = defaultCoordinateSystem,
+  gridStep?: number,
+): { dx: number; dy: number } => {
+  const step = gridStep ?? coordinateSystem.gridStep
+  if (!coordinateSystem.snapToGrid) {
+    return { dx, dy }
+  }
+  return {
+    dx: Math.round(dx / step) * step,
+    dy: Math.round(dy / step) * step,
+  }
+}
+
 export const formatNumber = (value: number): string => {
   const rounded = Math.round(value * 1000) / 1000
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
 }
 
 export const distance = (a: Point, b: Point): number => Math.hypot(b.x - a.x, b.y - a.y)
+
+export const translatePoint = (p: Point, d: Point): Point => ({ x: p.x + d.x, y: p.y + d.y })
+
+export const rotatePointAround = (p: Point, c: Point, deg: number): Point => {
+  const rad = (deg * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const x = p.x - c.x
+  const y = p.y - c.y
+  return { x: c.x + x * cos - y * sin, y: c.y + x * sin + y * cos }
+}
+
+/** Reflect point across the infinite line through a and b. */
+export const mirrorPointAcrossLine = (q: Point, a: Point, b: Point): Point => {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const len2 = dx * dx + dy * dy
+  if (len2 < 1e-18) return q
+  const ux = dx / Math.sqrt(len2)
+  const uy = dy / Math.sqrt(len2)
+  const vx = q.x - a.x
+  const vy = q.y - a.y
+  const t = vx * ux + vy * uy
+  const proj = { x: a.x + t * ux, y: a.y + t * uy }
+  return { x: 2 * proj.x - q.x, y: 2 * proj.y - q.y }
+}
 
 const rimPointOnCircleLocal = (center: Point, radius: number, angleDeg: number): Point => {
   const rad = (angleDeg * Math.PI) / 180

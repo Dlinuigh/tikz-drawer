@@ -10,11 +10,12 @@ import {
 } from '../lib/sectorVariantGeometry'
 import { majorArcSignedSweep } from '../lib/sectorAngles'
 import type { CoordinateSystem } from '../lib/geometry'
+import { ellipseArcPolylineD } from '../lib/ellipseArcGeometry'
 import {
   distance,
   getArcGeometry,
+  maybeSnapTikzPoint,
   regularPolygonVertices,
-  snapTikzPoint,
   svgToTikz,
   tikzToSvg,
 } from '../lib/geometry'
@@ -71,10 +72,19 @@ type DrawingCanvasProps = {
   onCircleRadiusCenterPick: (center: Point) => void
   onEllipseRadiiCenterPick: (center: Point) => void
   onArcCenterAnglesCenterPick: (center: Point) => void
+  onEllipseArcCenterPick: (center: Point) => void
   onIntersectionElementPick: (elementId: string) => void
   intersectionPickIds: string[]
   /** 扇形工具当前子选项（草稿预览与新建写入）。 */
   sectorShapeSubtool: SectorShapeSubtool
+  /** 移动模式：拖拽平移选中（由 App 处理坐标与吸附） */
+  moveToolActive?: boolean
+  onMoveDragStart?: (point: Point, ctrlKey: boolean) => void
+  onMoveDragMove?: (point: Point, ctrlKey: boolean) => void
+  onMoveDragEnd?: () => void
+  mirrorToolActive?: boolean
+  onMirrorCanvasPoint?: (point: Point, ctrlKey: boolean) => void
+  onMirrorAxisLinePick?: (lineElementId: string) => void
 }
 
 const createId = () => crypto.randomUUID()
@@ -97,6 +107,32 @@ const getSvgPoint = (event: MouseEvent<SVGSVGElement>, _cs: CoordinateSystem): P
     x: (event.clientX - rect.left) * (_cs.width / rect.width),
     y: (event.clientY - rect.top) * (_cs.height / rect.height),
   }
+}
+
+/** 点击子元素（path、circle 等）时，用根 SVG 的 CTM 换算到 viewBox，再转 TikZ（对称两点可用）。 */
+const tikzPointFromMouseOnSvgRoot = (
+  event: MouseEvent,
+  svgRoot: SVGSVGElement,
+  cs: CoordinateSystem,
+  gridStep: number,
+): Point => {
+  const pt = svgRoot.createSVGPoint()
+  pt.x = event.clientX
+  pt.y = event.clientY
+  const ctm = svgRoot.getScreenCTM()
+  let svgCoords: Point
+  if (ctm) {
+    const sp = pt.matrixTransform(ctm.inverse())
+    svgCoords = { x: sp.x, y: sp.y }
+  } else {
+    const rect = svgRoot.getBoundingClientRect()
+    svgCoords = {
+      x: (event.clientX - rect.left) * (cs.width / rect.width),
+      y: (event.clientY - rect.top) * (cs.height / rect.height),
+    }
+  }
+  const raw = svgToTikz(svgCoords, cs)
+  return maybeSnapTikzPoint(raw, event.ctrlKey, cs, gridStep)
 }
 
 const arcPath = (start: Point, end: Point, sweepAngle: number, cs: CoordinateSystem): string => {
@@ -221,11 +257,21 @@ export function DrawingCanvas({
   onCircleRadiusCenterPick,
   onEllipseRadiiCenterPick,
   onArcCenterAnglesCenterPick,
+  onEllipseArcCenterPick,
   onIntersectionElementPick,
   intersectionPickIds,
   sectorShapeSubtool,
+  moveToolActive = false,
+  onMoveDragStart,
+  onMoveDragMove,
+  onMoveDragEnd,
+  mirrorToolActive = false,
+  onMirrorCanvasPoint,
+  onMirrorAxisLinePick,
 }: DrawingCanvasProps) {
+  const svgRef = useRef<SVGSVGElement | null>(null)
   const panLast = useRef<{ x: number; y: number } | null>(null)
+  const moveDragId = useRef<number | null>(null)
   const marqueeStartRef = useRef<Point | null>(null)
   const marqueeLastRef = useRef<Point | null>(null)
   const marqueePointerIdRef = useRef<number | null>(null)
@@ -300,7 +346,13 @@ export function DrawingCanvas({
       skipNextClick.current = false
       return
     }
-    const point = snapTikzPoint(svgToTikz(getSvgPoint(event, cs), cs), cs, gridConfig.gridStep)
+    const raw = svgToTikz(getSvgPoint(event, cs), cs)
+    const point = maybeSnapTikzPoint(raw, event.ctrlKey, cs, gridConfig.gridStep)
+
+    if (mirrorToolActive && onMirrorCanvasPoint) {
+      onMirrorCanvasPoint(point, event.ctrlKey)
+      return
+    }
 
     if (activeTool === 'select') {
       onSelect(null)
@@ -324,6 +376,11 @@ export function DrawingCanvas({
 
     if (activeTool === 'arc' && arcSubtool === 'centerRadiusAngles' && !draft) {
       onArcCenterAnglesCenterPick(point)
+      return
+    }
+
+    if (activeTool === 'arc' && arcSubtool === 'ellipseCenterRadiiAngles' && !draft) {
+      onEllipseArcCenterPick(point)
       return
     }
 
@@ -484,9 +541,10 @@ export function DrawingCanvas({
       return
     }
 
+    const raw = svgToTikz(getSvgPoint(event, cs), cs)
     onDraftChange({
       ...draft,
-      end: snapTikzPoint(svgToTikz(getSvgPoint(event, cs), cs), cs, gridConfig.gridStep),
+      end: maybeSnapTikzPoint(raw, event.ctrlKey, cs, gridConfig.gridStep),
       sweepAngle: draft.type === 'arc' ? arcAngle : draft.sweepAngle,
     })
   }
@@ -499,11 +557,32 @@ export function DrawingCanvas({
     }
 
     if (
+      moveToolActive &&
+      onMoveDragStart &&
+      selectedIds.length > 0 &&
+      event.button === 0 &&
+      !draft &&
+      moveDragId.current === null
+    ) {
+      const raw = svgToTikz(getSvgPoint(event as unknown as MouseEvent<SVGSVGElement>, cs), cs)
+      const p = maybeSnapTikzPoint(raw, event.ctrlKey, cs, gridConfig.gridStep)
+      onMoveDragStart(p, event.ctrlKey)
+      moveDragId.current = event.pointerId
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId)
+      } catch {
+        /* ignore */
+      }
+      return
+    }
+
+    if (
       activeTool === 'select' &&
       event.button === 0 &&
       onBoxSelect &&
       !draft &&
-      marqueePointerIdRef.current === null
+      marqueePointerIdRef.current === null &&
+      !moveToolActive
     ) {
       const t = event.target as Element
       const isMarqueeBackdrop =
@@ -527,6 +606,13 @@ export function DrawingCanvas({
   }
 
   const handlePointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (moveDragId.current === event.pointerId && onMoveDragMove) {
+      const raw = svgToTikz(getSvgPoint(event as unknown as MouseEvent<SVGSVGElement>, cs), cs)
+      const p = maybeSnapTikzPoint(raw, event.ctrlKey, cs, gridConfig.gridStep)
+      onMoveDragMove(p, event.ctrlKey)
+      return
+    }
+
     if (marqueePointerIdRef.current === event.pointerId && marqueeStartRef.current) {
       const p = getSvgPoint(event, cs)
       marqueeLastRef.current = p
@@ -588,12 +674,25 @@ export function DrawingCanvas({
     }
   }
 
+  const finishMoveDrag = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (moveDragId.current !== event.pointerId) return
+    moveDragId.current = null
+    onMoveDragEnd?.()
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch {
+      /* ignore */
+    }
+  }
+
   const handlePointerUp = (event: ReactPointerEvent<SVGSVGElement>) => {
+    finishMoveDrag(event)
     finishMarqueePointer(event)
     panLast.current = null
   }
 
   const handlePointerCancel = (event: ReactPointerEvent<SVGSVGElement>) => {
+    finishMoveDrag(event)
     if (marqueePointerIdRef.current === event.pointerId) {
       marqueePointerIdRef.current = null
       marqueeStartRef.current = null
@@ -613,6 +712,15 @@ export function DrawingCanvas({
     const isIntersectionPick = !isDraft && activeTool === 'intersection' && intersectionPickIds.includes(element.id)
     const handleElementClick = (event: MouseEvent) => {
       event.stopPropagation()
+      if (mirrorToolActive && onMirrorCanvasPoint && svgRef.current) {
+        if (element.type === 'line' && onMirrorAxisLinePick) {
+          onMirrorAxisLinePick(element.id)
+          return
+        }
+        const p = tikzPointFromMouseOnSvgRoot(event, svgRef.current, cs, gridConfig.gridStep)
+        onMirrorCanvasPoint(p, event.ctrlKey)
+        return
+      }
       if (activeTool === 'intersection' && !isDraft) {
         onIntersectionElementPick(element.id)
       } else {
@@ -651,6 +759,33 @@ export function DrawingCanvas({
     }
 
     if (element.type === 'arc') {
+      if (
+        element.definitionMode === 'ellipseCenterRadiiAngles' &&
+        element.center &&
+        element.radiusX !== undefined &&
+        element.radiusY !== undefined &&
+        element.startAngle !== undefined &&
+        element.endAngle !== undefined
+      ) {
+        const d = ellipseArcPolylineD(
+          element.center,
+          element.radiusX,
+          element.radiusY,
+          element.startAngle,
+          element.endAngle,
+          element.ellipseRotationDeg ?? 0,
+          cs,
+        )
+        return (
+          <path
+            key={element.id}
+            {...commonProps}
+            d={d}
+            fill="none"
+            onClick={handleElementClick}
+          />
+        )
+      }
       return (
         <path
           key={element.id}
@@ -1298,10 +1433,14 @@ export function DrawingCanvas({
               const parts = s.split(',').map((x) => Number.parseFloat(x.trim()))
               return { x: parts[0] ?? 0, y: parts[1] ?? 0 }
             }
+            const ox = element.scopeShift?.x ?? 0
+            const oy = element.scopeShift?.y ?? 0
             const a = parsePt(m[1])
             const b = parsePt(m[2])
-            const sa = tikzToSvg(a, cs)
-            const sb = tikzToSvg(b, cs)
+            const aS = { x: a.x + ox, y: a.y + oy }
+            const bS = { x: b.x + ox, y: b.y + oy }
+            const sa = tikzToSvg(aS, cs)
+            const sb = tikzToSvg(bS, cs)
             pieces.push(
               <line
                 key={`${element.id}-f-${ix}`}
@@ -1332,7 +1471,8 @@ export function DrawingCanvas({
       const isIx = element.type === 'intersectionPoint'
       const dotClass = isIx
         ? `intersection-point-marker${selected ? ' selected' : ''}`
-        : undefined
+        : `point-marker${selected ? ' selected' : ''}`
+      const dotR = selected ? 7.5 : isIx ? 5 : 4
       return (
         <g key={element.id} onClick={handleElementClick} style={{ cursor: 'pointer' }}>
           <circle
@@ -1341,7 +1481,7 @@ export function DrawingCanvas({
             cy={center.y}
             fill={element.style.drawColor}
             opacity={element.style.opacity}
-            r={isIx && selected ? 5 : 4}
+            r={dotR}
             stroke={element.style.drawColor}
             strokeWidth={element.style.lineWidth * 2}
           />
@@ -1487,6 +1627,7 @@ export function DrawingCanvas({
     <div className="canvas-card">
       {/* 多段线用 Esc 完成（≥2 点提交）或取消（<2 点），不显示按钮 */}
       <svg
+        ref={svgRef}
         className="drawing-canvas"
         height={cs.height}
         role="application"

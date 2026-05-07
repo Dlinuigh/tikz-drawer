@@ -225,6 +225,12 @@
   opacity: 0.45;
 }
 
+.canvas-toolbar-action-btn.active {
+  background: #dbeafe;
+  border-color: var(--accent, #2563eb);
+  color: #1e40af;
+}
+
 .canvas-card {
   display: flex;
   flex: 1;
@@ -749,6 +755,25 @@
   gap: 8px;
   justify-content: flex-end;
   margin-top: 14px;
+}
+
+.modal-inline-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  margin-bottom: 12px;
+}
+
+.modal-inline-row label {
+  flex: 1;
+  min-width: 72px;
+}
+
+button.secondary {
+  align-self: center;
+  font-size: 13px;
+  padding: 6px 10px;
 }
 
 button.primary {

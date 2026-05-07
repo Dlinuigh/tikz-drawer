@@ -9,12 +9,14 @@ import {
   AxesBoundsModal,
   CircleRadiusModal,
   ConicModal,
+  EllipseArcAnglesModal,
   EllipseRadiiModal,
   ForeachModal,
   FunctionPlotModal,
   IntersectionModal,
   LineSlopeModal,
   RegularPolygonModal,
+  RotateSelectionModal,
 } from './components/DrawingModals'
 import type { CompileResult } from './components/PreviewPanel'
 import { PropertiesPanel } from './components/PropertiesPanel'
@@ -34,8 +36,18 @@ import {
   coordinateSystemWithOrigin,
   defaultCoordinateSystem,
   defaultViewOrigin,
+  snapTikzDelta,
   snapTikzPoint,
 } from './lib/geometry'
+import { ellipseArcPoint } from './lib/ellipseArcGeometry'
+import { computeFunctionPlotMarkers } from './lib/functionPlotMarkers'
+import {
+  cloneElementWithNewId,
+  mirrorElementsAcrossLine,
+  rotateElementsAround,
+  selectionBoundsCenterTikz,
+  translateElement,
+} from './lib/elementTransform'
 import { polarInputToCartesian } from './lib/polar'
 import { splitElementAtIntersectionMarkers } from './lib/splitGeometry'
 import type {
@@ -47,6 +59,7 @@ import type {
   DrawingElement,
   DrawingStyle,
   EllipseSubtool,
+  FunctionPlotElement,
   GridConfig,
   LineSubtool,
   PolarAngleUnit,
@@ -103,6 +116,15 @@ function App() {
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false)
   const [viewOrigin, setViewOrigin] = useState<Point>(() => defaultViewOrigin())
   const [gridSettingsOpen, setGridSettingsOpen] = useState(false)
+
+  const [moveToolActive, setMoveToolActive] = useState(false)
+  const [mirrorToolActive, setMirrorToolActive] = useState(false)
+  const [mirrorFirstPoint, setMirrorFirstPoint] = useState<Point | null>(null)
+  const [rotateModalOpen, setRotateModalOpen] = useState(false)
+  const [ellipseArcCenter, setEllipseArcCenter] = useState<Point | null>(null)
+
+  const moveSnapshotRef = useRef<Map<string, DrawingElement>>(new Map())
+  const moveStartRef = useRef<Point | null>(null)
 
   const coordinateSystem = useMemo(() => coordinateSystemWithOrigin(viewOrigin), [viewOrigin])
 
@@ -183,7 +205,22 @@ function App() {
     )
   }, [])
 
+  /** 退出绘图过程中的草稿/拾取，并切回选择工具（编辑侧栏与部分工具共用） */
+  const exitDrawingToSelect = useCallback(() => {
+    setActiveTool('select')
+    setDraft(null)
+    setLineSlopeAnchor(null)
+    setCircleRadiusCenter(null)
+    setEllipseRadiiCenter(null)
+    setArcCenterAnglesCenter(null)
+    setEllipseArcCenter(null)
+    setRegularPolygonCorners(null)
+    setAxesModalOrigin(null)
+    setIntersectionPickIds([])
+  }, [])
+
   const splitAtIntersectionMarkers = useCallback(() => {
+    exitDrawingToSelect()
     const id = selectedIds[0]
     if (!id) return
     const target = elements.find((e) => e.id === id)
@@ -198,9 +235,10 @@ function App() {
     purgeIntersectionPairsForId(id)
     setElements((els) => [...els.filter((e) => e.id !== id), ...parts])
     setSelectedIds(parts.map((p) => p.id))
-  }, [elements, selectedIds, purgeIntersectionPairsForId])
+  }, [elements, selectedIds, exitDrawingToSelect, purgeIntersectionPairsForId])
 
   const mergeCycleToFilledPath = useCallback(() => {
+    exitDrawingToSelect()
     const sel = selectedIds
       .map((i) => elements.find((e) => e.id === i))
       .filter(Boolean) as DrawingElement[]
@@ -218,7 +256,7 @@ function App() {
     }
     setElements((els) => [...els, el])
     setSelectedIds([el.id])
-  }, [selectedIds, elements, currentStyle])
+  }, [selectedIds, elements, currentStyle, exitDrawingToSelect])
 
   const commitNewElement = useCallback(
     (element: DrawingElement) => {
@@ -272,6 +310,168 @@ function App() {
       updateElement({ ...selectedElement, sweepAngle: angle })
     }
   }
+
+  const deleteSelectedIds = useCallback(() => {
+    if (selectedIds.length === 0) return
+    for (const id of selectedIds) {
+      purgeIntersectionPairsForId(id)
+    }
+    setElements((els) => els.filter((e) => !selectedIds.includes(e.id)))
+    setSelectedIds([])
+  }, [selectedIds, purgeIntersectionPairsForId])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return
+      const t = e.target as HTMLElement
+      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return
+      e.preventDefault()
+      deleteSelectedIds()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [deleteSelectedIds])
+
+  const copySelectionOffset = useCallback(() => {
+    if (selectedIds.length === 0) return
+    exitDrawingToSelect()
+    const s = gridConfig.gridStep
+    const d: Point = { x: s, y: -s }
+    const newIds: string[] = []
+    setElements((els) => {
+      const next = [...els]
+      for (const id of selectedIds) {
+        const el = els.find((e) => e.id === id)
+        if (!el) continue
+        const nid = createId()
+        newIds.push(nid)
+        next.push(cloneElementWithNewId(translateElement(el, d), nid))
+      }
+      return next
+    })
+    if (newIds.length) setSelectedIds(newIds)
+  }, [exitDrawingToSelect, gridConfig.gridStep, selectedIds])
+
+  const openRotateModal = useCallback(() => {
+    if (selectedIds.length === 0) return
+    exitDrawingToSelect()
+    setRotateModalOpen(true)
+  }, [selectedIds.length, exitDrawingToSelect])
+
+  const applyRotation = useCallback(
+    (deg: number, centerOverride: Point | null) => {
+      const c = centerOverride ?? selectionBoundsCenterTikz(elements, selectedIds)
+      if (!c) return
+      const idSet = new Set(selectedIds)
+      setElements((els) => rotateElementsAround(els, idSet, c, deg))
+      setRotateModalOpen(false)
+    },
+    [elements, selectedIds],
+  )
+
+  const startMirrorTool = useCallback(() => {
+    if (selectedIds.length === 0) {
+      setCopyHint('请先选中图元')
+      window.setTimeout(() => setCopyHint(null), 2000)
+      return
+    }
+    exitDrawingToSelect()
+    setMirrorToolActive(true)
+    setMirrorFirstPoint(null)
+    setMoveToolActive(false)
+  }, [selectedIds.length, exitDrawingToSelect])
+
+  const applyMirrorAxis = useCallback(
+    (a: Point, b: Point) => {
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      if (dx * dx + dy * dy < 1e-12) {
+        setCopyHint('对称轴两点不能重合')
+        window.setTimeout(() => setCopyHint(null), 2500)
+        return
+      }
+      const idSet = new Set(selectedIds)
+      setElements((els) => mirrorElementsAcrossLine(els, idSet, a, b))
+      setMirrorToolActive(false)
+      setMirrorFirstPoint(null)
+    },
+    [selectedIds],
+  )
+
+  const onMirrorCanvasPoint = useCallback(
+    (p: Point) => {
+      if (!mirrorFirstPoint) {
+        setMirrorFirstPoint(p)
+        return
+      }
+      applyMirrorAxis(mirrorFirstPoint, p)
+    },
+    [mirrorFirstPoint, applyMirrorAxis],
+  )
+
+  const onMirrorAxisLinePick = useCallback(
+    (lineId: string) => {
+      const line = elements.find((e) => e.id === lineId)
+      if (!line || line.type !== 'line') return
+      applyMirrorAxis(line.start, line.end)
+    },
+    [elements, applyMirrorAxis],
+  )
+
+  const onMoveDragStart = useCallback(
+    (p: Point) => {
+      moveStartRef.current = p
+      const m = new Map<string, DrawingElement>()
+      for (const id of selectedIds) {
+        const el = elements.find((e) => e.id === id)
+        if (el) m.set(id, el)
+      }
+      moveSnapshotRef.current = m
+    },
+    [elements, selectedIds],
+  )
+
+  const onMoveDragMove = useCallback(
+    (p: Point, ctrlKey: boolean) => {
+      const start = moveStartRef.current
+      if (!start) return
+      let dx = p.x - start.x
+      let dy = p.y - start.y
+      if (!ctrlKey) {
+        const s = snapTikzDelta(dx, dy, coordinateSystem, gridConfig.gridStep)
+        dx = s.dx
+        dy = s.dy
+      }
+      const d: Point = { x: dx, y: dy }
+      const snap = moveSnapshotRef.current
+      const idSet = new Set(selectedIds)
+      setElements((els) =>
+        els.map((e) => {
+          const orig = snap.get(e.id)
+          return orig && idSet.has(e.id) ? translateElement(orig, d) : e
+        }),
+      )
+    },
+    [coordinateSystem, gridConfig.gridStep, selectedIds],
+  )
+
+  const onMoveDragEnd = useCallback(() => {
+    moveStartRef.current = null
+    moveSnapshotRef.current = new Map()
+  }, [])
+
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (moveToolActive) setMoveToolActive(false)
+      if (mirrorToolActive) {
+        setMirrorToolActive(false)
+        setMirrorFirstPoint(null)
+      }
+    }
+    window.addEventListener('keydown', onEsc)
+    return () => window.removeEventListener('keydown', onEsc)
+  }, [moveToolActive, mirrorToolActive])
 
   const compileManualCode = async (code: string) => {
     setIsCompiling(true)
@@ -622,6 +822,41 @@ function App() {
         }}
       />
 
+      <EllipseArcAnglesModal
+        open={ellipseArcCenter !== null}
+        center={ellipseArcCenter}
+        onCancel={() => setEllipseArcCenter(null)}
+        onConfirm={(center, radiusX, radiusY, startAngle, endAngle, ellipseRotationDeg) => {
+          const rot = ellipseRotationDeg
+          const computedStart = ellipseArcPoint(center, radiusX, radiusY, startAngle, rot)
+          const computedEnd = ellipseArcPoint(center, radiusX, radiusY, endAngle, rot)
+          const element: DrawingElement = {
+            id: createId(),
+            type: 'arc',
+            start: snapTikzPoint(computedStart, undefined, gridConfig.gridStep),
+            end: snapTikzPoint(computedEnd, undefined, gridConfig.gridStep),
+            sweepAngle: endAngle - startAngle,
+            style: currentStyle,
+            definitionMode: 'ellipseCenterRadiiAngles',
+            center,
+            radiusX,
+            radiusY,
+            startAngle,
+            endAngle,
+            ellipseRotationDeg: rot,
+          }
+          setElements((currentElements) => [...currentElements, element])
+          setSelectedIds([element.id])
+          setEllipseArcCenter(null)
+        }}
+      />
+
+      <RotateSelectionModal
+        open={rotateModalOpen}
+        onCancel={() => setRotateModalOpen(false)}
+        onConfirm={(deg, center) => applyRotation(deg, center)}
+      />
+
       <CircleRadiusModal
         open={circleRadiusCenter !== null}
         center={circleRadiusCenter}
@@ -764,16 +999,31 @@ function App() {
                     if (tool === 'conic') {
                       setConicModalOpen(true)
                       setActiveTool('select')
+                      setDraft(null)
+                      setRegularPolygonCorners(null)
+                      setMoveToolActive(false)
+                      setMirrorToolActive(false)
+                      setMirrorFirstPoint(null)
                       return
                     }
                     if (tool === 'plot') {
                       setPlotModalOpen(true)
                       setActiveTool('select')
+                      setDraft(null)
+                      setRegularPolygonCorners(null)
+                      setMoveToolActive(false)
+                      setMirrorToolActive(false)
+                      setMirrorFirstPoint(null)
                       return
                     }
                     if (tool === 'foreach') {
                       setForeachModalOpen(true)
                       setActiveTool('select')
+                      setDraft(null)
+                      setRegularPolygonCorners(null)
+                      setMoveToolActive(false)
+                      setMirrorToolActive(false)
+                      setMirrorFirstPoint(null)
                       return
                     }
                     setActiveTool(tool)
@@ -782,7 +1032,12 @@ function App() {
                     setCircleRadiusCenter(null)
                     setEllipseRadiiCenter(null)
                     setArcCenterAnglesCenter(null)
+                    setEllipseArcCenter(null)
+                    setRegularPolygonCorners(null)
                     setIntersectionPickIds([])
+                    setMoveToolActive(false)
+                    setMirrorToolActive(false)
+                    setMirrorFirstPoint(null)
                     if (tool === 'intersection') {
                       setSelectedIds([])
                     }
@@ -813,6 +1068,54 @@ function App() {
                   >
                     合并填充
                   </button>
+                  <button
+                    className={`canvas-toolbar-action-btn${moveToolActive ? ' active' : ''}`}
+                    disabled={selectedIds.length === 0}
+                    title="平移选中图元：开启后在画布上拖拽；默认吸附网格，按住 Ctrl 自由移动。再点一次关闭。"
+                    type="button"
+                    onClick={() => {
+                      exitDrawingToSelect()
+                      setMirrorToolActive(false)
+                      setMirrorFirstPoint(null)
+                      setMoveToolActive((m) => !m)
+                    }}
+                  >
+                    移动
+                  </button>
+                  <button
+                    className="canvas-toolbar-action-btn"
+                    disabled={selectedIds.length === 0}
+                    title={`复制选中图元，向右下 45° 偏移 ${gridConfig.gridStep}（当前网格步长）`}
+                    type="button"
+                    onClick={() => copySelectionOffset()}
+                  >
+                    拷贝
+                  </button>
+                  <button
+                    className="canvas-toolbar-action-btn"
+                    disabled={selectedIds.length === 0}
+                    title="绕选中包围盒中心旋转；逆时针为正，可在对话框输入负值顺时针。"
+                    type="button"
+                    onClick={() => openRotateModal()}
+                  >
+                    旋转
+                  </button>
+                  <button
+                    className={`canvas-toolbar-action-btn${mirrorToolActive ? ' active' : ''}`}
+                    disabled={selectedIds.length === 0}
+                    title="对称：点击一条直线图元作为轴，或在画布上点击两点定义轴。Esc 取消。"
+                    type="button"
+                    onClick={() => {
+                      if (mirrorToolActive) {
+                        setMirrorToolActive(false)
+                        setMirrorFirstPoint(null)
+                      } else {
+                        startMirrorTool()
+                      }
+                    }}
+                  >
+                    对称
+                  </button>
                 </div>
               </div>
               <DrawingCanvas
@@ -833,6 +1136,14 @@ function App() {
                 onCircleRadiusCenterPick={(center) => setCircleRadiusCenter(center)}
                 onEllipseRadiiCenterPick={(center) => setEllipseRadiiCenter(center)}
                 onArcCenterAnglesCenterPick={(center) => setArcCenterAnglesCenter(center)}
+                onEllipseArcCenterPick={(center) => setEllipseArcCenter(center)}
+                moveToolActive={moveToolActive}
+                mirrorToolActive={mirrorToolActive}
+                onMirrorAxisLinePick={onMirrorAxisLinePick}
+                onMirrorCanvasPoint={onMirrorCanvasPoint}
+                onMoveDragEnd={onMoveDragEnd}
+                onMoveDragMove={onMoveDragMove}
+                onMoveDragStart={onMoveDragStart}
                 onIntersectionElementPick={(id) => {
                   const picks = intersectionPickIds
                   if (picks.includes(id)) return
@@ -1045,9 +1356,23 @@ function App() {
       <FunctionPlotModal
         open={plotModalOpen}
         onCancel={() => setPlotModalOpen(false)}
-        onConfirm={(p) => {
+        onConfirm={(p, { addMarkers }) => {
           const el: DrawingElement = { ...p, id: createId(), style: currentStyle }
-          setElements((els) => [...els, el])
+          const plotEl = el as FunctionPlotElement
+          const markers: DrawingElement[] = []
+          if (addMarkers) {
+            const { zeros, maxima, minima } = computeFunctionPlotMarkers(plotEl)
+            for (const z of zeros) {
+              markers.push({ id: createId(), type: 'point', center: z, label: '零点', style: currentStyle })
+            }
+            for (const pt of maxima) {
+              markers.push({ id: createId(), type: 'point', center: pt, label: '极大', style: currentStyle })
+            }
+            for (const pt of minima) {
+              markers.push({ id: createId(), type: 'point', center: pt, label: '极小', style: currentStyle })
+            }
+          }
+          setElements((els) => [...els, el, ...markers])
           setSelectedIds([el.id])
           setPlotModalOpen(false)
         }}
