@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ArcSubtool, CircleSubtool, EllipseSubtool, LineSubtool, Tool } from '../types/drawing'
+import type {
+  ArcSubtool,
+  CircleSubtool,
+  ClosedShapeFillSubtool,
+  EllipseSubtool,
+  LineSubtool,
+  SectorShapeSubtool,
+  Tool,
+} from '../types/drawing'
 
 type ToolbarProps = {
   activeTool: Tool
@@ -7,25 +15,31 @@ type ToolbarProps = {
   circleSubtool: CircleSubtool
   ellipseSubtool: EllipseSubtool
   arcSubtool: ArcSubtool
+  closedShapeFillSubtool: ClosedShapeFillSubtool
+  sectorShapeSubtool: SectorShapeSubtool
   onToolChange: (tool: Tool) => void
   onLineSubtoolChange: (sub: LineSubtool) => void
   onCircleSubtoolChange: (sub: CircleSubtool) => void
   onEllipseSubtoolChange: (sub: EllipseSubtool) => void
   onArcSubtoolChange: (sub: ArcSubtool) => void
+  onClosedShapeFillSubtoolChange: (sub: ClosedShapeFillSubtool) => void
+  onSectorShapeSubtoolChange: (sub: SectorShapeSubtool) => void
 }
 
-const primaryTools: Array<{ value: Tool; label: string; submenu?: 'line' | 'arc' | 'circle' | 'ellipse' }> = [
+type SubmenuKey = 'line' | 'arc' | 'circle' | 'ellipse' | 'closedFill' | 'sector'
+
+const primaryTools: Array<{ value: Tool; label: string; submenu?: SubmenuKey }> = [
   { value: 'select', label: '选择' },
   { value: 'point', label: '点' },
   { value: 'line', label: '直线', submenu: 'line' },
-  { value: 'rectangle', label: '矩形' },
+  { value: 'rectangle', label: '矩形', submenu: 'closedFill' },
   { value: 'circle', label: '圆', submenu: 'circle' },
   { value: 'ellipse', label: '椭圆', submenu: 'ellipse' },
   { value: 'polyline', label: '多段线' },
-  { value: 'polygon', label: '多边形' },
+  { value: 'polygon', label: '多边形', submenu: 'closedFill' },
   { value: 'arc', label: '圆弧', submenu: 'arc' },
-  { value: 'sector', label: '扇形' },
-  { value: 'regularPolygon', label: '正多边形' },
+  { value: 'sector', label: '扇形', submenu: 'sector' },
+  { value: 'regularPolygon', label: '正多边形', submenu: 'closedFill' },
   { value: 'axes', label: '坐标轴' },
   { value: 'intersection', label: '交点' },
   { value: 'fillPick', label: '填色' },
@@ -54,19 +68,51 @@ const arcSubtools: Array<{ value: ArcSubtool; label: string }> = [
   { value: 'centerRadiusAngles', label: '圆心+半径+角度' },
 ]
 
+function ClosedFillButtons({
+  closedShapeFillSubtool,
+  onClosedShapeFillSubtoolChange,
+}: {
+  closedShapeFillSubtool: ClosedShapeFillSubtool
+  onClosedShapeFillSubtoolChange: (sub: ClosedShapeFillSubtool) => void
+}) {
+  return (
+    <>
+      <div className="toolbar-menu-section-title">新建时填充</div>
+      <button
+        className={`tool-menu-item ${closedShapeFillSubtool === 'none' ? 'active' : ''}`}
+        type="button"
+        onClick={() => onClosedShapeFillSubtoolChange('none')}
+      >
+        无填充
+      </button>
+      <button
+        className={`tool-menu-item ${closedShapeFillSubtool === 'solid' ? 'active' : ''}`}
+        type="button"
+        onClick={() => onClosedShapeFillSubtoolChange('solid')}
+      >
+        浅色实心填充
+      </button>
+    </>
+  )
+}
+
 export function Toolbar({
   activeTool,
   lineSubtool,
   circleSubtool,
   ellipseSubtool,
   arcSubtool,
+  closedShapeFillSubtool,
+  sectorShapeSubtool,
   onToolChange,
   onLineSubtoolChange,
   onCircleSubtoolChange,
   onEllipseSubtoolChange,
   onArcSubtoolChange,
+  onClosedShapeFillSubtoolChange,
+  onSectorShapeSubtoolChange,
 }: ToolbarProps) {
-  const [openSubmenu, setOpenSubmenu] = useState<'line' | 'arc' | 'circle' | 'ellipse' | null>(null)
+  const [openSubmenu, setOpenSubmenu] = useState<SubmenuKey | null>(null)
   const toolbarRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -89,8 +135,15 @@ export function Toolbar({
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const handlePrimaryClick = (tool: Tool, submenu?: 'line' | 'arc' | 'circle' | 'ellipse') => {
-    if (submenu === 'line' || submenu === 'arc' || submenu === 'circle' || submenu === 'ellipse') {
+  const handlePrimaryClick = (tool: Tool, submenu?: SubmenuKey) => {
+    if (
+      submenu === 'line' ||
+      submenu === 'arc' ||
+      submenu === 'circle' ||
+      submenu === 'ellipse' ||
+      submenu === 'closedFill' ||
+      submenu === 'sector'
+    ) {
       onToolChange(tool)
       setOpenSubmenu((prev) => (prev === submenu ? null : submenu))
       return
@@ -134,7 +187,8 @@ export function Toolbar({
       )}
 
       {openSubmenu === 'circle' && (
-        <div className="toolbar-floating-menu toolbar-floating-menu-circle" role="menu">
+        <div className="toolbar-floating-menu toolbar-floating-menu-circle toolbar-floating-menu-wide" role="menu">
+          <div className="toolbar-menu-section-title">画法</div>
           {circleSubtools.map((sub) => (
             <button
               key={sub.value}
@@ -142,17 +196,21 @@ export function Toolbar({
               type="button"
               onClick={() => {
                 onCircleSubtoolChange(sub.value)
-                setOpenSubmenu(null)
               }}
             >
               {sub.label}
             </button>
           ))}
+          <ClosedFillButtons
+            closedShapeFillSubtool={closedShapeFillSubtool}
+            onClosedShapeFillSubtoolChange={onClosedShapeFillSubtoolChange}
+          />
         </div>
       )}
 
       {openSubmenu === 'ellipse' && (
-        <div className="toolbar-floating-menu toolbar-floating-menu-ellipse" role="menu">
+        <div className="toolbar-floating-menu toolbar-floating-menu-ellipse toolbar-floating-menu-wide" role="menu">
+          <div className="toolbar-menu-section-title">画法</div>
           {ellipseSubtools.map((sub) => (
             <button
               key={sub.value}
@@ -160,12 +218,15 @@ export function Toolbar({
               type="button"
               onClick={() => {
                 onEllipseSubtoolChange(sub.value)
-                setOpenSubmenu(null)
               }}
             >
               {sub.label}
             </button>
           ))}
+          <ClosedFillButtons
+            closedShapeFillSubtool={closedShapeFillSubtool}
+            onClosedShapeFillSubtoolChange={onClosedShapeFillSubtoolChange}
+          />
         </div>
       )}
 
@@ -187,7 +248,77 @@ export function Toolbar({
         </div>
       )}
 
-      {/* 清空已移至菜单栏 File > New Canvas */}
+      {openSubmenu === 'closedFill' && (
+        <div
+          className={`toolbar-floating-menu toolbar-floating-menu-wide ${
+            activeTool === 'rectangle'
+              ? 'toolbar-floating-menu-rectangle'
+              : activeTool === 'polygon'
+                ? 'toolbar-floating-menu-polygon'
+                : 'toolbar-floating-menu-regularPolygon'
+          }`}
+          role="menu"
+        >
+          <div className="toolbar-menu-section-title">画法</div>
+          <div className="toolbar-menu-hint">
+            {activeTool === 'rectangle' && '对角两点拖出轴对齐矩形。'}
+            {activeTool === 'polygon' && '逐点点击，Esc 完成闭合。'}
+            {activeTool === 'regularPolygon' && '先圆心再顶点定半径，边数在弹窗中设置。'}
+          </div>
+          <ClosedFillButtons
+            closedShapeFillSubtool={closedShapeFillSubtool}
+            onClosedShapeFillSubtoolChange={onClosedShapeFillSubtoolChange}
+          />
+        </div>
+      )}
+
+      {openSubmenu === 'sector' && (
+        <div
+          className="toolbar-floating-menu toolbar-floating-menu-sector toolbar-floating-menu-wide"
+          role="menu"
+        >
+          <div className="toolbar-menu-section-title">形状</div>
+          <button
+            className={`tool-menu-item ${sectorShapeSubtool === 'convexPie' ? 'active' : ''}`}
+            type="button"
+            onClick={() => onSectorShapeSubtoolChange('convexPie')}
+          >
+            外凸扇形（两半径+弧）
+          </button>
+          <button
+            className={`tool-menu-item ${sectorShapeSubtool === 'convexSegment' ? 'active' : ''}`}
+            type="button"
+            onClick={() => onSectorShapeSubtoolChange('convexSegment')}
+          >
+            外凸弓形（弦+较小弧）
+          </button>
+          <button
+            className={`tool-menu-item ${sectorShapeSubtool === 'concaveBracket' ? 'active' : ''}`}
+            type="button"
+            onClick={() => onSectorShapeSubtoolChange('concaveBracket')}
+          >
+            凹弧 ⟨（圆心侧）
+          </button>
+          <button
+            className={`tool-menu-item ${sectorShapeSubtool === 'majorArcPie' ? 'active' : ''}`}
+            type="button"
+            onClick={() => onSectorShapeSubtoolChange('majorArcPie')}
+          >
+            对称弧楔（相对凹弧）
+          </button>
+          <button
+            className={`tool-menu-item ${sectorShapeSubtool === 'iceCream' ? 'active' : ''}`}
+            type="button"
+            onClick={() => onSectorShapeSubtoolChange('iceCream')}
+          >
+            冰激凌（顶点→母线→顶角）
+          </button>
+          <ClosedFillButtons
+            closedShapeFillSubtool={closedShapeFillSubtool}
+            onClosedShapeFillSubtoolChange={onClosedShapeFillSubtoolChange}
+          />
+        </div>
+      )}
     </aside>
   )
 }

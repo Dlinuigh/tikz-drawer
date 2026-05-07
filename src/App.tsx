@@ -41,6 +41,7 @@ import { splitElementAtIntersectionMarkers } from './lib/splitGeometry'
 import type {
   ArcSubtool,
   CircleSubtool,
+  ClosedShapeFillSubtool,
   CoordinateInputMode,
   DraftElement,
   DrawingElement,
@@ -50,6 +51,7 @@ import type {
   LineSubtool,
   PolarAngleUnit,
   Point,
+  SectorShapeSubtool,
   Tool,
 } from './types/drawing'
 import {
@@ -84,6 +86,8 @@ function App() {
   const [circleSubtool, setCircleSubtool] = useState<CircleSubtool>('centerRadius')
   const [ellipseSubtool, setEllipseSubtool] = useState<EllipseSubtool>('centerRadii')
   const [arcSubtool, setArcSubtool] = useState<ArcSubtool>('sweepAngle')
+  const [closedShapeFillSubtool, setClosedShapeFillSubtool] = useState<ClosedShapeFillSubtool>('none')
+  const [sectorShapeSubtool, setSectorShapeSubtool] = useState<SectorShapeSubtool>('convexPie')
   const [circleRadiusCenter, setCircleRadiusCenter] = useState<Point | null>(null)
   const [ellipseRadiiCenter, setEllipseRadiiCenter] = useState<Point | null>(null)
   const [arcCenterAnglesCenter, setArcCenterAnglesCenter] = useState<Point | null>(null)
@@ -216,11 +220,22 @@ function App() {
     setSelectedIds([el.id])
   }, [selectedIds, elements, currentStyle])
 
-  const commitNewElement = useCallback((element: DrawingElement) => {
-    const patched = withClosedShapeDefaultFillIfApplicable(element)
-    setElements((currentElements) => [...currentElements, patched])
-    setSelectedIds([patched.id])
-  }, [])
+  const commitNewElement = useCallback(
+    (element: DrawingElement) => {
+      const useFill =
+        closedShapeFillSubtool === 'solid' &&
+        (element.type === 'rectangle' ||
+          element.type === 'circle' ||
+          element.type === 'ellipse' ||
+          element.type === 'polygon' ||
+          element.type === 'regularPolygon' ||
+          element.type === 'sector')
+      const patched = useFill ? withClosedShapeDefaultFillIfApplicable(element) : element
+      setElements((currentElements) => [...currentElements, patched])
+      setSelectedIds([patched.id])
+    },
+    [closedShapeFillSubtool],
+  )
 
   const canSplitAtIntersection = useMemo(() => {
     if (selectedIds.length !== 1 || !selectedElement) return false
@@ -733,14 +748,18 @@ function App() {
               <div className="floating-toolbar">
                 <Toolbar
                   activeTool={activeTool}
-                  lineSubtool={lineSubtool}
-                  circleSubtool={circleSubtool}
-                  ellipseSubtool={ellipseSubtool}
                   arcSubtool={arcSubtool}
-                  onLineSubtoolChange={setLineSubtool}
-                  onCircleSubtoolChange={setCircleSubtool}
-                  onEllipseSubtoolChange={setEllipseSubtool}
+                  circleSubtool={circleSubtool}
+                  closedShapeFillSubtool={closedShapeFillSubtool}
+                  ellipseSubtool={ellipseSubtool}
+                  lineSubtool={lineSubtool}
+                  sectorShapeSubtool={sectorShapeSubtool}
                   onArcSubtoolChange={setArcSubtool}
+                  onCircleSubtoolChange={setCircleSubtool}
+                  onClosedShapeFillSubtoolChange={setClosedShapeFillSubtool}
+                  onEllipseSubtoolChange={setEllipseSubtool}
+                  onLineSubtoolChange={setLineSubtool}
+                  onSectorShapeSubtoolChange={setSectorShapeSubtool}
                   onToolChange={(tool) => {
                     if (tool === 'conic') {
                       setConicModalOpen(true)
@@ -840,6 +859,7 @@ function App() {
                   })
                 }}
                 intersectionPickIds={intersectionPickIds}
+                sectorShapeSubtool={sectorShapeSubtool}
                 onSelect={selectCanvas}
                 onBoxSelect={boxSelectCanvas}
                 onFillPick={(pt) => {

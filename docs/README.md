@@ -11,3 +11,4 @@
 | [`export_pdf_preview.plan.md`](./export_pdf_preview.plan.md) | PDF 预览 / 导出相关计划片段 |
 | [`session_axes_bounds_line_subtools.plan.md`](./session_axes_bounds_line_subtools.plan.md) | 坐标轴边界与直线子工具会话记录 |
 | [`plan_2026-05-07_advanced_features.md`](./plan_2026-05-07_advanced_features.md) | 填充、极坐标、新图元、分割与合并填充（2026-05-07） |
+| [`plan_2026-05-07_closed_shapes_sector.md`](./plan_2026-05-07_closed_shapes_sector.md) | 封闭图形菜单统一与扇形三模式（2026-05-07） |

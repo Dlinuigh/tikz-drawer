@@ -1,6 +1,7 @@
 import { sampleConicCurve } from './conicSamples'
 import { sampleFunctionPlot } from './plotSamples'
-import { ccwSweepDegrees } from './sectorAngles'
+import { ccwSweepDegrees, majorArcSignedSweep, minorArcSignedSweep } from './sectorAngles'
+import { concaveBracketArcParams } from './sectorBracketMath'
 import type {
   DrawingElement,
   Point,
@@ -8,6 +9,7 @@ import type {
   RegularPolygonElement,
   SectorElement,
 } from '../types/drawing'
+import { sectorEffectiveShape } from '../types/drawing'
 
 export type CoordinateSystem = {
   width: number
@@ -63,6 +65,37 @@ export const formatNumber = (value: number): string => {
 }
 
 export const distance = (a: Point, b: Point): number => Math.hypot(b.x - a.x, b.y - a.y)
+
+const rimPointOnCircleLocal = (center: Point, radius: number, angleDeg: number): Point => {
+  const rad = (angleDeg * Math.PI) / 180
+  return { x: center.x + radius * Math.cos(rad), y: center.y + radius * Math.sin(rad) }
+}
+
+/** 由圆上两切点方位角反推两切线交点；用于内凹扇形无 apex 时的回退。 */
+export function inferTangentApexFromRim(
+  center: Point,
+  radius: number,
+  t1Deg: number,
+  t2Deg: number,
+): Point | null {
+  const r1 = (t1Deg * Math.PI) / 180
+  const r2 = (t2Deg * Math.PI) / 180
+  const T1 = rimPointOnCircleLocal(center, radius, t1Deg)
+  const T2 = rimPointOnCircleLocal(center, radius, t2Deg)
+  const d1 = { x: -Math.sin(r1), y: Math.cos(r1) }
+  const d2 = { x: -Math.sin(r2), y: Math.cos(r2) }
+  const vx = T2.x - T1.x
+  const vy = T2.y - T1.y
+  const det = d1.x * d2.y - d1.y * d2.x
+  if (Math.abs(det) < 1e-12) return null
+  const s = (vx * d2.y - vy * d2.x) / det
+  return { x: T1.x + s * d1.x, y: T1.y + s * d1.y }
+}
+
+export function resolveTangentApex(el: SectorElement): Point | null {
+  if (el.apex) return el.apex
+  return inferTangentApexFromRim(el.center, el.radius, el.startAngleDeg, el.endAngleDeg)
+}
 
 export type ArcGeometry = {
   center: Point
@@ -375,16 +408,27 @@ export const ellipseLineIntersections = (
   return results
 }
 
-/** 归一化角度到 [0, 360)。 */
-const normalizeAngle = (a: number): number => ((a % 360) + 360) % 360
-
-/** 判断点是否在圆弧的扫过角度范围内。 */
+/**
+ * 判断点是否在圆弧上（已在圆上）。按 {@link getArcGeometry} 的语义：角度沿 `startAngle → endAngle` 线性插值。
+ * 旧实现把起止角各自 normalize 到 [0,360) 再比区间，会破坏负扫角、优弧与跨 0°，导致扇形弧与线段求交全部被滤掉。
+ */
 const isPointOnArc = (point: Point, geo: ArcGeometry): boolean => {
-  const angle = Math.atan2(point.y - geo.center.y, point.x - geo.center.x) * 180 / Math.PI
-  const a = normalizeAngle(angle)
-  const s = normalizeAngle(geo.startAngle)
-  const e = normalizeAngle(geo.endAngle)
-  return s <= e ? (a >= s && a <= e) : (a >= s || a <= e)
+  const tolDist = Math.max(1e-4, geo.radius * 1e-6)
+  if (Math.abs(distance(point, geo.center) - geo.radius) > tolDist) return false
+
+  const startRad = (geo.startAngle * Math.PI) / 180
+  const sweepRad = ((geo.endAngle - geo.startAngle) * Math.PI) / 180
+  const twoPi = 2 * Math.PI
+
+  if (Math.abs(sweepRad) < 1e-12) return false
+  if (Math.abs(sweepRad) >= twoPi - 1e-9) return true
+
+  const ap = Math.atan2(point.y - geo.center.y, point.x - geo.center.x)
+  for (let k = -5; k <= 5; k++) {
+    const t = (ap - startRad + twoPi * k) / sweepRad
+    if (t >= -1e-5 && t <= 1 + 1e-5) return true
+  }
+  return false
 }
 
 /** 圆弧与线段的交点：先用 lineCircleIntersections，再按角度过滤。 */
@@ -486,16 +530,75 @@ type IntersectInfo = {
 
 function appendSector(el: SectorElement, info: IntersectInfo): void {
   const toRad = (deg: number) => (deg * Math.PI) / 180
+  const shape = sectorEffectiveShape(el)
+  if (shape === 'iceCream') {
+    const A = el.apex
+    if (!A) return
+    const C = el.center
+    const rc = el.radius
+    const p0 = {
+      x: C.x + rc * Math.cos(toRad(el.startAngleDeg)),
+      y: C.y + rc * Math.sin(toRad(el.startAngleDeg)),
+    }
+    const p1 = {
+      x: C.x + rc * Math.cos(toRad(el.endAngleDeg)),
+      y: C.y + rc * Math.sin(toRad(el.endAngleDeg)),
+    }
+    const sweep = el.iceArcSweepDeg ?? majorArcSignedSweep(el.startAngleDeg, el.endAngleDeg)
+    info.segs.push(A, p0, A, p1)
+    info.arcs.push({ start: p0, end: p1, sweepAngle: sweep })
+    return
+  }
+
+  const O = el.center
   const r = el.radius
   const p0 = {
-    x: el.center.x + r * Math.cos(toRad(el.startAngleDeg)),
-    y: el.center.y + r * Math.sin(toRad(el.startAngleDeg)),
+    x: O.x + r * Math.cos(toRad(el.startAngleDeg)),
+    y: O.y + r * Math.sin(toRad(el.startAngleDeg)),
   }
   const p1 = {
-    x: el.center.x + r * Math.cos(toRad(el.endAngleDeg)),
-    y: el.center.y + r * Math.sin(toRad(el.endAngleDeg)),
+    x: O.x + r * Math.cos(toRad(el.endAngleDeg)),
+    y: O.y + r * Math.sin(toRad(el.endAngleDeg)),
   }
-  info.segs.push(el.center, p0, el.center, p1)
+
+  if (shape === 'convexSegment') {
+    info.segs.push(p0, p1)
+    info.arcs.push({
+      start: p1,
+      end: p0,
+      sweepAngle: minorArcSignedSweep(el.endAngleDeg, el.startAngleDeg),
+    })
+    return
+  }
+  if (shape === 'majorArcPie') {
+    info.segs.push(O, p0, O, p1)
+    info.arcs.push({
+      start: p0,
+      end: p1,
+      sweepAngle: majorArcSignedSweep(el.startAngleDeg, el.endAngleDeg),
+    })
+    return
+  }
+  if (shape === 'concaveBracket') {
+    const g = concaveBracketArcParams(O, r, el.startAngleDeg, el.endAngleDeg)
+    if (!g) {
+      info.segs.push(O, p0, O, p1)
+      info.arcs.push({
+        start: p0,
+        end: p1,
+        sweepAngle: ccwSweepDegrees(el.startAngleDeg, el.endAngleDeg),
+      })
+      return
+    }
+    info.segs.push(O, g.P0, O, g.P1)
+    info.arcs.push({
+      start: g.P0,
+      end: g.P1,
+      sweepAngle: g.arcSweepDeg,
+    })
+    return
+  }
+  info.segs.push(O, p0, O, p1)
   info.arcs.push({
     start: p0,
     end: p1,

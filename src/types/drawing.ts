@@ -155,7 +155,22 @@ export type PolylineElement = {
   style: DrawingStyle
 }
 
-/** Circular sector (pie wedge): center, radius, angles in degrees (CCW, TikZ-like). */
+/**
+ * 圆心类扇形：`convexPie` / `convexSegment` / `majorArcPie`（对称弧楔：同外凸三击，第一点即圆心；边界弧用 `majorArcSignedSweep`）；第三点定弧向。
+ * `concaveBracket`：`<(` 凹弧。`iceCream`：顶点→母线→顶角；`center` 为凹弧圆心，`apex` 为顶点。
+ * 存档旧值 `tangentConcave` → `majorArcPie`。另有旧值 `pie`/`segment`。
+ */
+export type SectorShapeMode =
+  | 'convexPie'
+  | 'convexSegment'
+  | 'majorArcPie'
+  | 'concaveBracket'
+  | 'iceCream'
+
+/**
+ * Circular sector: `center` 对圆心类画法为 **鼠标第一点**；对称弧楔 TikZ 导出时再由此算真正的弧圆心（镜面点）。
+ * 半径与 `startAngleDeg`/`endAngleDeg`：第二点在大圆上，第三点定弧向（CCW，度）。
+ */
 export type SectorElement = {
   id: string
   type: 'sector'
@@ -163,8 +178,21 @@ export type SectorElement = {
   radius: number
   startAngleDeg: number
   endAngleDeg: number
+  sectorShape?: SectorShapeMode | 'pie' | 'segment' | 'tangentConcave'
+  /** 冰激凌：甜筒顶点。 */
+  apex?: Point
+  /** 冰激凌：凹弧相对凹弧圆心的扫角（优弧）。 */
+  iceArcSweepDeg?: number
+  /** @deprecated 旧版「反扇形」；读取时映射为弓形 convexSegment */
+  inverseArc?: boolean
   style: DrawingStyle
 }
+
+/** 新建封闭图元时工具栏「填充」子选项：默认无填充。 */
+export type ClosedShapeFillSubtool = 'none' | 'solid'
+
+/** 扇形工具子模式（与 {@link SectorShapeMode} 一致，不含旧别名）。 */
+export type SectorShapeSubtool = SectorShapeMode
 
 /** Regular n-gon inscribed in circle through first vertex. */
 export type RegularPolygonElement = {
@@ -410,6 +438,18 @@ export function withClosedShapeDefaultFillIfApplicable(el: DrawingElement): Draw
     default:
       return el
   }
+}
+
+export function sectorEffectiveShape(el: SectorElement): SectorShapeMode {
+  const s = el.sectorShape
+  if (s === 'tangentConcave') return 'majorArcPie'
+  if (s === 'majorArcPie') return 'majorArcPie'
+  if (s === 'concaveBracket') return 'concaveBracket'
+  if (s === 'iceCream') return 'iceCream'
+  if (s === 'convexSegment' || s === 'segment') return 'convexSegment'
+  if (el.inverseArc) return 'convexSegment'
+  if (s === 'convexPie' || s === 'pie' || s === undefined) return 'convexPie'
+  return 'convexPie'
 }
 
 export const presetColors = ['#111827', '#dc2626', '#2563eb', '#16a34a', '#ea580c', '#7c3aed']

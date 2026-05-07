@@ -316,6 +316,37 @@
   min-width: 140px;
 }
 
+.toolbar-floating-menu-rectangle {
+  top: 102px;
+}
+
+.toolbar-floating-menu-polygon {
+  top: 238px;
+}
+
+.toolbar-floating-menu-regularPolygon {
+  top: 340px;
+}
+
+.toolbar-floating-menu-sector {
+  top: 306px;
+}
+
+.toolbar-menu-hint {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.35;
+  max-width: 220px;
+  padding: 0 4px 6px;
+}
+
+.toolbar-menu-section-title {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 6px 4px 2px;
+}
+
 .tool-menu-item {
   background: var(--control);
   border: 1px solid var(--border);

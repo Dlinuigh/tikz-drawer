@@ -1,7 +1,14 @@
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { expandForeachList } from '../lib/foreachExpand'
-import { sectorPathD } from '../lib/sectorGeometry'
+import { iceCreamArcParams } from '../lib/sectorBracketMath'
+import { circularSegmentPathD, majorArcSectorPathD, sectorPathD } from '../lib/sectorGeometry'
+import {
+  concaveBracketPathD,
+  iceCreamPathFromStored,
+  sectorRimFromThreeClicks,
+} from '../lib/sectorVariantGeometry'
+import { majorArcSignedSweep } from '../lib/sectorAngles'
 import type { CoordinateSystem } from '../lib/geometry'
 import {
   distance,
@@ -25,17 +32,19 @@ import {
   tickMarkDisplayLabel,
   tickValuesInRange,
 } from '../lib/axes'
-import type {
-  ArcSubtool,
-  CircleSubtool,
-  DraftElement,
-  DrawingElement,
-  DrawingStyle,
-  EllipseSubtool,
-  GridConfig,
-  LineSubtool,
-  Point,
-  Tool,
+import {
+  sectorEffectiveShape,
+  type ArcSubtool,
+  type CircleSubtool,
+  type DraftElement,
+  type DrawingElement,
+  type DrawingStyle,
+  type EllipseSubtool,
+  type GridConfig,
+  type LineSubtool,
+  type Point,
+  type SectorShapeSubtool,
+  type Tool,
 } from '../types/drawing'
 type DrawingCanvasProps = {
   activeTool: Tool
@@ -64,6 +73,8 @@ type DrawingCanvasProps = {
   onArcCenterAnglesCenterPick: (center: Point) => void
   onIntersectionElementPick: (elementId: string) => void
   intersectionPickIds: string[]
+  /** 扇形工具当前子选项（草稿预览与新建写入）。 */
+  sectorShapeSubtool: SectorShapeSubtool
 }
 
 const createId = () => crypto.randomUUID()
@@ -212,6 +223,7 @@ export function DrawingCanvas({
   onArcCenterAnglesCenterPick,
   onIntersectionElementPick,
   intersectionPickIds,
+  sectorShapeSubtool,
 }: DrawingCanvasProps) {
   const panLast = useRef<{ x: number; y: number } | null>(null)
   const marqueeStartRef = useRef<Point | null>(null)
@@ -344,6 +356,40 @@ export function DrawingCanvas({
     }
 
     if (activeTool === 'sector') {
+      if (sectorShapeSubtool === 'iceCream') {
+        if (!draft || draft.type !== 'sector') {
+          onDraftChange({ type: 'sector', start: point, end: point, points: [point], style: currentStyle })
+          return
+        }
+        const pts = draft.points ?? []
+        if (pts.length === 1) {
+          onDraftChange({ ...draft, points: [pts[0], point], end: point })
+          return
+        }
+        if (pts.length >= 2) {
+          const A = pts[0]
+          const B = pts[1]
+          const C = point
+          const g = iceCreamArcParams(A, B, C)
+          if (!g) return
+          const phi0 = (Math.atan2(g.P0.y - g.arcCenter.y, g.P0.x - g.arcCenter.x) * 180) / Math.PI
+          const phi1 = (Math.atan2(g.P1.y - g.arcCenter.y, g.P1.x - g.arcCenter.x) * 180) / Math.PI
+          onCreate({
+            id: createId(),
+            type: 'sector',
+            sectorShape: 'iceCream',
+            apex: A,
+            center: g.arcCenter,
+            radius: g.arcRadius,
+            startAngleDeg: phi0,
+            endAngleDeg: phi1,
+            iceArcSweepDeg: g.arcSweepDeg,
+            style: draft.style,
+          })
+          onDraftChange(null)
+          return
+        }
+      }
       if (!draft || draft.type !== 'sector') {
         onDraftChange({ type: 'sector', start: point, end: point, points: [point], style: currentStyle })
         return
@@ -357,16 +403,19 @@ export function DrawingCanvas({
         const c = pts[0]
         const r1 = pts[1]
         const r2 = point
-        const radius = distance(c, r1)
-        const startAngleDeg = (Math.atan2(r1.y - c.y, r1.x - c.x) * 180) / Math.PI
-        const endAngleDeg = (Math.atan2(r2.y - c.y, r2.x - c.x) * 180) / Math.PI
+        const rim = sectorRimFromThreeClicks(c, r1, r2)
+        let sectorShape: typeof sectorShapeSubtool = 'convexPie'
+        if (sectorShapeSubtool === 'convexSegment') sectorShape = 'convexSegment'
+        else if (sectorShapeSubtool === 'majorArcPie') sectorShape = 'majorArcPie'
+        else if (sectorShapeSubtool === 'concaveBracket') sectorShape = 'concaveBracket'
         onCreate({
           id: createId(),
           type: 'sector',
           center: c,
-          radius,
-          startAngleDeg,
-          endAngleDeg,
+          radius: rim.radius,
+          startAngleDeg: rim.startAngleDeg,
+          endAngleDeg: rim.endAngleDeg,
+          sectorShape,
           style: draft.style,
         })
         onDraftChange(null)
@@ -1139,7 +1188,46 @@ export function DrawingCanvas({
 
     if (element.type === 'sector') {
       const fs = svgFillStrokePreview(element.style)
-      const d = sectorPathD(element.center, element.radius, element.startAngleDeg, element.endAngleDeg, cs)
+      const sh = sectorEffectiveShape(element)
+      let d: string
+      if (sh === 'iceCream' && element.apex) {
+        const sweep = element.iceArcSweepDeg ?? majorArcSignedSweep(element.startAngleDeg, element.endAngleDeg)
+        d = iceCreamPathFromStored(
+          element.apex,
+          element.center,
+          element.radius,
+          element.startAngleDeg,
+          element.endAngleDeg,
+          sweep,
+          cs,
+        )
+      } else if (sh === 'convexSegment') {
+        d = circularSegmentPathD(
+          element.center,
+          element.radius,
+          element.startAngleDeg,
+          element.endAngleDeg,
+          cs,
+        )
+      } else if (sh === 'majorArcPie') {
+        d = majorArcSectorPathD(
+          element.center,
+          element.radius,
+          element.startAngleDeg,
+          element.endAngleDeg,
+          cs,
+        )
+      } else if (sh === 'concaveBracket') {
+        d = concaveBracketPathD(
+          element.center,
+          element.radius,
+          element.startAngleDeg,
+          element.endAngleDeg,
+          cs,
+        )
+      } else {
+        d = sectorPathD(element.center, element.radius, element.startAngleDeg, element.endAngleDeg, cs)
+      }
       return (
         <path
           key={element.id}
@@ -1321,19 +1409,51 @@ export function DrawingCanvas({
       }
     if (draft.type === 'sector') {
       const pts = draft.points ?? []
+      if (sectorShapeSubtool === 'iceCream') {
+        if (pts.length === 1) {
+          return { id: 'draft', type: 'line', start: pts[0], end: draft.end, style: st }
+        }
+        if (pts.length >= 2) {
+          const g = iceCreamArcParams(pts[0], pts[1], draft.end)
+          if (!g) {
+            return { id: 'draft', type: 'line', start: pts[0], end: pts[1], style: st }
+          }
+          const phi0 = (Math.atan2(g.P0.y - g.arcCenter.y, g.P0.x - g.arcCenter.x) * 180) / Math.PI
+          const phi1 = (Math.atan2(g.P1.y - g.arcCenter.y, g.P1.x - g.arcCenter.x) * 180) / Math.PI
+          return {
+            id: 'draft',
+            type: 'sector',
+            sectorShape: 'iceCream',
+            apex: pts[0],
+            center: g.arcCenter,
+            radius: g.arcRadius,
+            startAngleDeg: phi0,
+            endAngleDeg: phi1,
+            iceArcSweepDeg: g.arcSweepDeg,
+            style: st,
+          }
+        }
+        return null
+      }
       if (pts.length === 1) {
         return { id: 'draft', type: 'line', start: pts[0], end: draft.end, style: st }
       }
       if (pts.length >= 2) {
         const c = pts[0]
         const r1 = pts[1]
+        const rim = sectorRimFromThreeClicks(c, r1, draft.end)
+        let sectorShape: typeof sectorShapeSubtool = 'convexPie'
+        if (sectorShapeSubtool === 'convexSegment') sectorShape = 'convexSegment'
+        else if (sectorShapeSubtool === 'majorArcPie') sectorShape = 'majorArcPie'
+        else if (sectorShapeSubtool === 'concaveBracket') sectorShape = 'concaveBracket'
         return {
           id: 'draft',
           type: 'sector',
           center: c,
-          radius: distance(c, r1),
-          startAngleDeg: (Math.atan2(r1.y - c.y, r1.x - c.x) * 180) / Math.PI,
-          endAngleDeg: (Math.atan2(draft.end.y - c.y, draft.end.x - c.x) * 180) / Math.PI,
+          radius: rim.radius,
+          startAngleDeg: rim.startAngleDeg,
+          endAngleDeg: rim.endAngleDeg,
+          sectorShape,
           style: st,
         }
       }

@@ -1,6 +1,9 @@
 import type { CoordinateSystem } from './geometry'
 import { distance, getArcGeometry, regularPolygonVertices, tikzToSvg } from './geometry'
-import type { DrawingElement, Point } from '../types/drawing'
+import { concaveBracketArcParams } from './sectorBracketMath'
+import { majorArcSignedSweep } from './sectorAngles'
+import { rimPointOnCircle } from './sectorGeometry'
+import { sectorEffectiveShape, type DrawingElement, type Point, type SectorElement } from '../types/drawing'
 import { tikzCenterOfElement } from './elementCenter'
 import { sampleConicCurve } from './conicSamples'
 import { sampleFunctionPlot } from './plotSamples'
@@ -80,6 +83,72 @@ export function elementSvgBounds(element: DrawingElement, cs: CoordinateSystem):
     case 'filledPath':
       return expandAabb(boundsFromTikzPoints(element.vertices, cs)!, pad)
     case 'sector': {
+      const sec = element as SectorElement
+      const sh = sectorEffectiveShape(sec)
+      if (sh === 'convexSegment') {
+        const r = sec.radius * cs.pixelsPerUnit
+        const c = tikzToSvg(sec.center, cs)
+        return { minX: c.x - r - pad, minY: c.y - r - pad, maxX: c.x + r + pad, maxY: c.y + r + pad }
+      }
+      if (sh === 'majorArcPie') {
+        const sweep = majorArcSignedSweep(sec.startAngleDeg, sec.endAngleDeg)
+        const n = Math.max(20, Math.ceil(Math.abs(sweep) / 8))
+        const pts: Point[] = [sec.center]
+        for (let i = 0; i <= n; i++) {
+          const t = i / n
+          const ang = sec.startAngleDeg + sweep * t
+          const rad = (ang * Math.PI) / 180
+          pts.push({
+            x: sec.center.x + sec.radius * Math.cos(rad),
+            y: sec.center.y + sec.radius * Math.sin(rad),
+          })
+        }
+        return expandAabb(boundsFromTikzPoints(pts, cs)!, pad)
+      }
+      if (sh === 'concaveBracket') {
+        const g = concaveBracketArcParams(sec.center, sec.radius, sec.startAngleDeg, sec.endAngleDeg)
+        if (!g) {
+          const r = sec.radius * cs.pixelsPerUnit
+          const c = tikzToSvg(sec.center, cs)
+          return { minX: c.x - r - pad, minY: c.y - r - pad, maxX: c.x + r + pad, maxY: c.y + r + pad }
+        }
+        const sweep = g.arcSweepDeg
+        const n = Math.max(20, Math.ceil(Math.abs(sweep) / 8))
+        const phi0 = (Math.atan2(g.P0.y - g.arcCenter.y, g.P0.x - g.arcCenter.x) * 180) / Math.PI
+        const pts: Point[] = [sec.center, g.P0]
+        for (let i = 1; i < n; i++) {
+          const t = i / n
+          const ang = phi0 + sweep * t
+          const rad = (ang * Math.PI) / 180
+          pts.push({
+            x: g.arcCenter.x + g.arcRadius * Math.cos(rad),
+            y: g.arcCenter.y + g.arcRadius * Math.sin(rad),
+          })
+        }
+        pts.push(g.P1)
+        return expandAabb(boundsFromTikzPoints(pts, cs)!, pad)
+      }
+      if (sh === 'iceCream' && sec.apex) {
+        const C = sec.center
+        const rc = sec.radius
+        const sweep = sec.iceArcSweepDeg ?? majorArcSignedSweep(sec.startAngleDeg, sec.endAngleDeg)
+        const P0 = rimPointOnCircle(C, rc, sec.startAngleDeg)
+        const P1 = rimPointOnCircle(C, rc, sec.endAngleDeg)
+        const phi0 = (Math.atan2(P0.y - C.y, P0.x - C.x) * 180) / Math.PI
+        const n = Math.max(20, Math.ceil(Math.abs(sweep) / 8))
+        const pts: Point[] = [sec.apex, P0]
+        for (let i = 1; i < n; i++) {
+          const t = i / n
+          const ang = phi0 + sweep * t
+          const rad = (ang * Math.PI) / 180
+          pts.push({
+            x: C.x + rc * Math.cos(rad),
+            y: C.y + rc * Math.sin(rad),
+          })
+        }
+        pts.push(P1)
+        return expandAabb(boundsFromTikzPoints(pts, cs)!, pad)
+      }
       const pts: Point[] = [
         element.center,
         {

@@ -2,27 +2,29 @@ import { useState } from 'react'
 import { ColorPicker } from './ColorPicker'
 import { formatNumber } from '../lib/geometry'
 import { parseFlexibleNumber } from '../lib/parseNumber'
-import type {
-  ArcSubtool,
-  AxisLineElement,
-  AxisNameTikzPlacement,
-  AxisTickMark,
-  AxesElement,
-  ArrowHead,
-  CircleSubtool,
-  CoordinateInputMode,
-  DrawingElement,
-  DrawingStyle,
-  EllipseSubtool,
-  FillMode,
-  FillPatternName,
-  FunctionPlotElement,
-  LineCap,
-  LineJoin,
-  LineStyle,
-  LineSubtool,
-  PolarAngleUnit,
-  Tool,
+import {
+  sectorEffectiveShape,
+  type ArcSubtool,
+  type AxisLineElement,
+  type AxisNameTikzPlacement,
+  type AxisTickMark,
+  type AxesElement,
+  type ArrowHead,
+  type CircleSubtool,
+  type CoordinateInputMode,
+  type DrawingElement,
+  type DrawingStyle,
+  type EllipseSubtool,
+  type FillMode,
+  type FillPatternName,
+  type FunctionPlotElement,
+  type LineCap,
+  type LineJoin,
+  type LineStyle,
+  type LineSubtool,
+  type PolarAngleUnit,
+  type SectorShapeMode,
+  type Tool,
 } from '../types/drawing'
 
 const AXIS_NAME_PLACEMENT_OPTIONS: Array<{ value: AxisNameTikzPlacement; label: string }> = [
@@ -1098,6 +1100,30 @@ export function PropertiesPanel({
             onChange={(event) => onUpdate({ ...selectedElement, closed: event.target.checked })}
           />
           闭合（用于填充与 cycle）
+        </label>
+      )}
+
+      {selectedElement.type === 'sector' && (
+        <label>
+          形状
+          <select
+            value={sectorEffectiveShape(selectedElement)}
+            onChange={(event) => {
+              const v = event.target.value as SectorShapeMode
+              onUpdate({
+                ...selectedElement,
+                sectorShape: v,
+                inverseArc: undefined,
+                apex: undefined,
+              })
+            }}
+          >
+            <option value="convexPie">外凸扇形（两半径+弧）</option>
+            <option value="convexSegment">外凸弓形（弦+较小弧）</option>
+            <option value="concaveBracket">凹弧 ⟨（圆心侧）</option>
+            <option value="majorArcPie">对称弧楔（相对凹弧）</option>
+            <option value="iceCream">冰激凌（顶点→母线→顶角）</option>
+          </select>
         </label>
       )}
 

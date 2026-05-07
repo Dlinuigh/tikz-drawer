@@ -17,6 +17,12 @@ All notable changes to TikZ Drawer will be documented in this file.
 
 ### Changed
 
+- **扇形 · 对称弧楔（`majorArcPie`）**：画布不变；TikZ：路径「**鼠标第一点**—第二点—`arc`—回到第一点」（弧隐式圆心仍为镜面 `arcCenter`）；`delta angle = -minorArcMeasureDegrees(phi0,phi1)`（第二与第三间较小圆心角取负，如 −45 而非 −315）。
+- **扇形 · 画布弧（凹弧/冰激凌）**：新增 `sectorSvgArcFlagsSignedSweep`（按 `|δ|` 判断 large-arc）；原 `sectorSvgArcFlags` 仍用于饼楔与**对称弧楔**主圆路径，行为与修改前一致。
+- **扇形 · TikZ 导出（凹弧/冰激凌）**：改为 `圆心/顶点 -- 第一端点 arc[start angle, delta angle, radius] -- cycle`（两半径 + 一弧），不再使用 `plot coordinates`（避免被解析为折线弦 + 弧）。
+- **封闭图形工具栏**：矩形/圆/椭圆/多边形/正多边形/扇形点击后展开子菜单；**新建时填充**默认为「无填充」，可选「浅色实心填充」。圆、椭圆菜单内含「画法」与填充两段；矩形/多边形/正多边形菜单与圆一致，含「画法」简短说明与填充两段（独立浮动定位类）；扇形菜单含三种形状按钮（外凸扇形 / 外凸弓形 / 内凹切线扇形）与填充。
+- **扇形类型**：`SectorShapeMode` 现为 `convexPie` / `convexSegment` / `tangentConcave`；存档中的旧值 `pie` / `segment` 仍可读。**优弧扇形（`tangentConcave`，冰激凌）**：与外凸扇形相同三击（圆心→第一条半径→第二条半径），圆弧取两半径间的**优弧**（其余边界与饼楔一致）；不再使用切线交点交互。
+- **扇形 · 弓形**：原「反扇形（大弧楔）」改为**弓形**——与同一起止角的标准扇形**共弦**、**较小圆弧圆心角相同**（弦 + 小弧围成）；画布/TikZ/求交/填色拾取已对齐。旧数据的 `inverseArc` 仍读作弓形。
 - **扇形**：画布 SVG 弧与 TikZ 一致，按起始角到终止角的逆时针扫角（含环绕 ±180°、优弧）；`largeArc`/`sweep` 标志与通用圆弧绘制一致。求交时扇形边界弧使用同一 CCW 扫角，交点与弧线分割更易对齐；填色拾取楔区域与上述角度语义一致（`sectorAngles` / `sectorGeometry`）。
 - **画布**：闭合图元填充在 SVG 预览中可见（移除 `.shape` 的全局 `fill:none` 覆盖；圆弧路径显式 `fill="none"`）；`.shape` 使用 `pointer-events: painted` 以便点击填充区域即可选中。
 - **选择**：选择工具下在画布空白处（背景/网格/坐标轴线）拖拽可进行框选；与包围盒相交的图元入选，`Shift` 为追加并集。
@@ -24,6 +30,10 @@ All notable changes to TikZ Drawer will be documented in this file.
 - **样式**：新建矩形、圆、椭圆、多边形、正多边形、扇形时默认套用浅色实心填充（保留当前描边等其余样式）。
 - **工具栏**：主工具列表按由简到繁重排（选择 → 点 → 直线 → … → Foreach）。
 - **ESLint**：`globalIgnores` 排除 `src-tauri/target`（避免扫描 Tauri 构建产物）；为 `App.tsx`、`DrawingCanvas.tsx` 关闭 `react-hooks/refs` 与 `react-hooks/set-state-in-effect`（与原生菜单 ref 同步及 PDF blob 生命周期一致），保证云端 `npm run lint` 稳定通过。
+
+### Fixed
+
+- **求交**：`geometry.ts` 中 `isPointOnArc` 不再把起止角各自归一化到 `[0,360)` 再比较区间；改为沿圆弧参数 `t∈[0,1]`（与 `getArcGeometry` 一致），修复扇形等**负扫角、优弧、跨 0°** 时弧与直线/圆求交交点被误丢弃的问题。
 
 ## 0.1.0 - 2026-05-06
 

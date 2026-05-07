@@ -23,6 +23,10 @@ import {
 import { sampleConicCurve } from './conicSamples'
 import { distance, formatNumber, getArcGeometry, pointToTikz, regularPolygonVertices } from './geometry'
 import { sampleFunctionPlot } from './plotSamples'
+import { concaveBracketArcParams, majorArcPieTikzMirrorArcCenter } from './sectorBracketMath'
+import { majorArcSignedSweep, minorArcMeasureDegrees, minorArcSignedSweep } from './sectorAngles'
+import { rimPointOnCircle } from './sectorGeometry'
+import { sectorEffectiveShape } from '../types/drawing'
 
 const arrowHeadOptions: Record<DrawingStyle['startArrow'], string | null> = {
   none: null,
@@ -210,7 +214,7 @@ const filledPathToTikz = (element: DrawingElement): string => {
   return `${cmd}${closedOrDrawOpts(element.style)} ${pts} -- cycle;`
 }
 
-/** 扇形弧与画布一致：从 start angle 逆时针到 end angle（可为优弧）。 */
+/** 扇形：饼楔；弓形：弦 + 与饼楔相同的较小圆弧。 */
 const sectorToTikz = (element: DrawingElement): string => {
   if (element.type !== 'sector') return ''
   const { center, radius, startAngleDeg, endAngleDeg } = element
@@ -219,11 +223,52 @@ const sectorToTikz = (element: DrawingElement): string => {
     x: center.x + radius * Math.cos(toRad(startAngleDeg)),
     y: center.y + radius * Math.sin(toRad(startAngleDeg)),
   }
+  const p1: Point = {
+    x: center.x + radius * Math.cos(toRad(endAngleDeg)),
+    y: center.y + radius * Math.sin(toRad(endAngleDeg)),
+  }
   const cmd = element.style.fillMode === 'none' ? '\\draw' : '\\path'
-  return [
-    `${cmd}${closedOrDrawOpts(element.style)} ${pointToTikz(center)} -- ${pointToTikz(p0)}`,
-    `arc[start angle=${formatNumber(startAngleDeg)}, end angle=${formatNumber(endAngleDeg)}, radius=${formatNumber(radius)}] -- cycle;`,
-  ].join('\n')
+  const shape = sectorEffectiveShape(element)
+  if (shape === 'convexSegment') {
+    const sweep = minorArcSignedSweep(endAngleDeg, startAngleDeg)
+    return [
+      `${cmd}${closedOrDrawOpts(element.style)} ${pointToTikz(p0)} -- ${pointToTikz(p1)}`,
+      `arc[start angle=${formatNumber(endAngleDeg)}, delta angle=${formatNumber(sweep)}, radius=${formatNumber(radius)}] -- cycle;`,
+    ].join('\n')
+  }
+  if (shape === 'iceCream' && element.apex) {
+    const A = element.apex
+    const C = center
+    const rc = radius
+    const sweepIc = element.iceArcSweepDeg ?? majorArcSignedSweep(startAngleDeg, endAngleDeg)
+    const Q0 = rimPointOnCircle(C, rc, startAngleDeg)
+    const phi0 = (Math.atan2(Q0.y - C.y, Q0.x - C.x) * 180) / Math.PI
+    return `${cmd}${closedOrDrawOpts(element.style)} ${pointToTikz(A)} -- ${pointToTikz(Q0)} arc[start angle=${formatNumber(phi0)}, delta angle=${formatNumber(sweepIc)}, radius=${formatNumber(rc)}] -- cycle;`
+  }
+  if (shape === 'majorArcPie') {
+    // 鼠标第一点 center：线段 center—第二端点、弧终点—center；弧心在 arcCenter（镜面），delta = −(第二与第三间较小圆心角)
+    const { arcCenter, phi0, phi1 } = majorArcPieTikzMirrorArcCenter(
+      center,
+      radius,
+      startAngleDeg,
+      endAngleDeg,
+    )
+    const P2 = rimPointOnCircle(arcCenter, radius, phi0)
+    const minorDeg = minorArcMeasureDegrees(phi0, phi1)
+    const sweep = minorDeg >= 360 - 1e-9 ? -360 : -minorDeg
+    return `${cmd}${closedOrDrawOpts(element.style)} ${pointToTikz(center)} -- ${pointToTikz(P2)} arc[start angle=${formatNumber(phi0)}, delta angle=${formatNumber(sweep)}, radius=${formatNumber(radius)}] -- ${pointToTikz(center)};`
+  }
+  if (shape === 'concaveBracket') {
+    const g = concaveBracketArcParams(center, radius, startAngleDeg, endAngleDeg)
+    if (!g) {
+      const arcOpts = `arc[start angle=${formatNumber(startAngleDeg)}, end angle=${formatNumber(endAngleDeg)}, radius=${formatNumber(radius)}]`
+      return [`${cmd}${closedOrDrawOpts(element.style)} ${pointToTikz(center)} -- ${pointToTikz(p0)}`, `${arcOpts} -- cycle;`].join('\n')
+    }
+    const phi0 = (Math.atan2(g.P0.y - g.arcCenter.y, g.P0.x - g.arcCenter.x) * 180) / Math.PI
+    return `${cmd}${closedOrDrawOpts(element.style)} ${pointToTikz(center)} -- ${pointToTikz(g.P0)} arc[start angle=${formatNumber(phi0)}, delta angle=${formatNumber(g.arcSweepDeg)}, radius=${formatNumber(g.arcRadius)}] -- cycle;`
+  }
+  const arcOpts = `arc[start angle=${formatNumber(startAngleDeg)}, end angle=${formatNumber(endAngleDeg)}, radius=${formatNumber(radius)}]`
+  return [`${cmd}${closedOrDrawOpts(element.style)} ${pointToTikz(center)} -- ${pointToTikz(p0)}`, `${arcOpts} -- cycle;`].join('\n')
 }
 
 const regularPolygonToTikz = (element: DrawingElement): string => {
