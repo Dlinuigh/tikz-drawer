@@ -6,6 +6,7 @@ All notable changes to TikZ Drawer will be documented in this file.
 
 ### Added
 
+- **发布**：[`scripts/release-bump.mjs`](scripts/release-bump.mjs)（`npm run release:bump -- <semver>`）在单 semver 下完成：`package.json` / `tauri.conf.json` / `Cargo.toml` 对齐，`CHANGELOG` 将 `Unreleased` 晋升为该版本节，`README` 与 `docs/plan_handoff_next_version.md` 中旧版本号替换，`npm install`、`cargo check`、`npm run build`、`npm run lint`、`cargo build --locked`，可选 `npm run tauri build`（`--tauri`），以及 `git commit` + 附注 tag（`--no-git` 等可跳过部分步骤）。见脚本文件头注释。
 - **编辑**：画布侧栏「移动」「拷贝」「旋转」「对称」；移动模式拖拽平移多选（默认吸附网格，Ctrl 自由移动）；拷贝为沿右下 45° 平移当前网格步长；旋转对话框（默认绕选中包围盒中心，可选自定义 TikZ 旋转中心）；对称可点直线图元为轴，或在任意图元/空白上点两点定义轴（坐标换算至画布 TikZ）；使用侧栏编辑或切换主工具时自动退出绘图草稿并切回选择工具。
 - **点**：普通点与交点选中时显示更大标记。
 - **快捷键**：Delete / Backspace 删除选中（输入框内除外）；Esc 退出移动/对称模式。

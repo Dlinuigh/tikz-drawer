@@ -41,6 +41,14 @@ npm run tauri build
 
 产物通常在 `src-tauri/target/release/bundle/dmg/`（`.dmg`）与 `src-tauri/target/release/bundle/macos/`（`.app`）。
 
+发版用 **`npm run release:bump -- <semver>`**（实现为 [`scripts/release-bump.mjs`](scripts/release-bump.mjs)）。`npm version` 只会改 `package.json` 并可选打 tag，本仓库还需同步 Tauri / Rust 与 `CHANGELOG` / 文档，故用该脚本一次完成：提升 `CHANGELOG` 的 `Unreleased`、更新本页与 [`docs/plan_handoff_next_version.md`](docs/plan_handoff_next_version.md) 中的版本示例、`npm install` / `cargo check`、**`npm run build`** / **`npm run lint`** / **`cargo build --locked`**，并 **`git commit`** + **附注 tag `v…`**（可用 `--no-verify` / `--no-git` 等跳过部分步骤）。
+
+```sh
+npm run release:bump -- 0.2.0
+npm run release:bump -- --no-git 0.2.0
+npm run release:bump -- --tauri 0.2.0
+```
+
 创建标签并推送后，在 GitHub 网页 **Releases → Draft a new release**：
 
 1. **Choose a tag**：新建 `v0.1.0`（或与 `package.json` / `tauri.conf.json` 中版本一致）。

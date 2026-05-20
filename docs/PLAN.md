@@ -120,3 +120,9 @@ flowchart LR
 - **macOS 任务**：`npm ci` 后 `npm run tauri build`，与Release 构建路径一致（云端不依赖本机 LaTeX；CI 仅验证壳工程可编译打包）。
 - **README**：标题下增加 GitHub Actions 徽章（默认分支上该工作流最新一次结论）；说明见徽章链接触发的 Actions 页面。
 - **ESLint**：`eslint.config.js` 忽略 `src-tauri/target`；对 `App.tsx`、`DrawingCanvas.tsx` 关闭上述两项严格规则，避免 CI 误报（见 [`CHANGELOG.md`](../CHANGELOG.md) `Unreleased`）。
+
+## 2026-05-07 会话增量（发版版本号脚本）
+
+- **脚本**：[`scripts/release-bump.mjs`](../scripts/release-bump.mjs)（入口可为 [`scripts/release-bump.sh`](../scripts/release-bump.sh) 转调）接受 semver 与可选标志：晋升 `CHANGELOG` `Unreleased`、替换 `README` / `plan_handoff` 中旧版本字符串、锁文件与校验构建、`git commit`+tag；与仅修改 `package.json` 的 **`npm version`** 区分（本仓库需多文件与成品校验）。
+- **npm**：`package.json` 脚本 **`release:bump`** → `node scripts/release-bump.mjs`。
+- **文档**：[`README.md`](../README.md)「GitHub Release」节前说明全流程与标志；[`CHANGELOG.md`](../CHANGELOG.md) `Unreleased` 记录行为。

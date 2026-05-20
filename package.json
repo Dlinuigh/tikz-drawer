@@ -1,14 +1,15 @@
 {
   "name": "tikz-drawer",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "release:bump": "node scripts/release-bump.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",
